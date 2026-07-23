@@ -167,7 +167,7 @@ download_release() {
 }
 
 install_openrc_service() {
-    local service_url="https://raw.githubusercontent.com/${XUI_REPO}/x-ui/x-ui.rc"
+    local service_url="https://raw.githubusercontent.com/${XUI_REPO}/main/x-ui.rc"
     local temp="/etc/init.d/x-ui.tmp.$$"
     if [[ -n "$script_dir" && -f "$script_dir/x-ui.rc" ]]; then
         install -m 0755 "${script_dir}/x-ui.rc" /etc/init.d/x-ui
@@ -222,7 +222,7 @@ install_x_ui() {
     [[ -x "$XUI_FOLDER/x-ui" ]] || { error "安装包中缺少 x-ui 可执行文件。"; exit 1; }
     chmod +x "$XUI_FOLDER/x-ui" "$XUI_FOLDER/x-ui.sh" "$XUI_FOLDER/bin/xray-linux-${arch}"
 
-    script_url="https://raw.githubusercontent.com/${XUI_REPO}/x-ui/x-ui.sh"
+    script_url="https://raw.githubusercontent.com/${XUI_REPO}/main/x-ui.sh"
     script_temp="/usr/bin/x-ui.tmp.$$"
     rm -f "$script_temp"
     if ! curl -fsSL -o "$script_temp" "$script_url" || [[ ! -s "$script_temp" ]]; then

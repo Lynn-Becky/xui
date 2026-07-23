@@ -17,7 +17,7 @@
 # 安装&升级
 
 ```
-bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/x-ui/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/main/install.sh)
 ```
 
 ## 手动安装&升级
