@@ -1,0 +1,24 @@
+{{define "form/tunnel"}}
+<a-form layout="inline">
+    <a-form-item label="重写地址"><a-input v-model.trim="inbound.settings.rewriteAddress"></a-input></a-form-item>
+    <a-form-item label="重写端口"><a-input-number v-model.number="inbound.settings.rewritePort" :min="1" :max="65535"></a-input-number></a-form-item>
+    <a-form-item label="允许网络">
+        <a-select v-model="inbound.settings.allowedNetwork" style="width: 120px">
+            <a-select-option value="tcp,udp">TCP + UDP</a-select-option>
+            <a-select-option value="tcp">TCP</a-select-option>
+            <a-select-option value="udp">UDP</a-select-option>
+        </a-select>
+    </a-form-item>
+    <a-form-item label="followRedirect"><a-switch v-model="inbound.settings.followRedirect"></a-switch></a-form-item>
+</a-form>
+<a-form layout="inline" v-for="(destination, source) in inbound.settings.portMap" :key="source">
+    <a-form-item label="源端口"><a-input :value="source" disabled></a-input></a-form-item>
+    <a-form-item label="目标端口"><a-input v-model.trim="inbound.settings.portMap[source]"></a-input></a-form-item>
+    <a-form-item><a-button type="danger" size="small" @click="inbound.settings.delPortMap(source)">删除</a-button></a-form-item>
+</a-form>
+<a-form layout="inline">
+    <a-form-item label="源端口"><a-input v-model.trim="inbound.settings.newPortMapSource"></a-input></a-form-item>
+    <a-form-item label="目标端口"><a-input v-model.trim="inbound.settings.newPortMapDestination"></a-input></a-form-item>
+    <a-form-item><a-button size="small" @click="inbound.settings.addPortMap()">添加端口映射</a-button></a-form-item>
+</a-form>
+{{end}}

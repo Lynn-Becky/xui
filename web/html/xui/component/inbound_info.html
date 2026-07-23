@@ -65,7 +65,7 @@
         <p>密码: <a-tag color="green">[[ inbound.password ]]</a-tag></p>
     </template>
 
-    <template v-if="dbInbound.isSocks">
+    <template v-if="dbInbound.isMixed && inbound.settings.auth === 'password'">
         <p>用户名: <a-tag color="green">[[ inbound.username ]]</a-tag></p>
         <p>密码: <a-tag color="green">[[ inbound.password ]]</a-tag></p>
     </template>
@@ -75,7 +75,7 @@
         <p>密码: <a-tag color="green">[[ inbound.password ]]</a-tag></p>
     </template>
 
-    <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
+    <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS || dbInbound.isHysteria">
         {{template "inboundInfoStream"}}
     </template>
 </div>

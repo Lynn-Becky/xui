@@ -1,0 +1,96 @@
+{{define "form/streamXHTTP"}}
+<a-form layout="inline">
+    <a-form-item label="host">
+        <a-input v-model.trim="inbound.stream.xhttp.host"></a-input>
+    </a-form-item>
+    <a-form-item label="path">
+        <a-input v-model.trim="inbound.stream.xhttp.path"></a-input>
+    </a-form-item>
+    <a-form-item label="mode">
+        <a-select v-model="inbound.stream.xhttp.mode" style="width: 130px">
+            <a-select-option value="auto">auto</a-select-option>
+            <a-select-option value="packet-up">packet-up</a-select-option>
+            <a-select-option value="stream-up">stream-up</a-select-option>
+            <a-select-option value="stream-one">stream-one</a-select-option>
+        </a-select>
+    </a-form-item>
+    <a-form-item label="xPaddingBytes">
+        <a-input v-model.trim="inbound.stream.xhttp.xPaddingBytes" placeholder="100-1000"></a-input>
+    </a-form-item>
+    <a-form-item label="serverMaxHeaderBytes">
+        <a-input-number v-model="inbound.stream.xhttp.serverMaxHeaderBytes" :min="0"></a-input-number>
+    </a-form-item>
+    <a-form-item label="uplinkHTTPMethod">
+        <a-select v-model="inbound.stream.xhttp.uplinkHTTPMethod" style="width: 110px">
+            <a-select-option value="">default</a-select-option>
+            <a-select-option value="POST">POST</a-select-option>
+            <a-select-option value="PUT">PUT</a-select-option>
+            <a-select-option value="GET">GET</a-select-option>
+        </a-select>
+    </a-form-item>
+    <a-form-item label="noSSEHeader">
+        <a-switch v-model="inbound.stream.xhttp.noSSEHeader"></a-switch>
+    </a-form-item>
+</a-form>
+<a-form layout="inline" v-if="inbound.stream.xhttp.mode === 'packet-up' || inbound.stream.xhttp.mode === 'auto'">
+    <a-form-item label="scMaxEachPostBytes">
+        <a-input v-model.trim="inbound.stream.xhttp.scMaxEachPostBytes"></a-input>
+    </a-form-item>
+    <a-form-item label="scMaxBufferedPosts">
+        <a-input-number v-model="inbound.stream.xhttp.scMaxBufferedPosts" :min="0"></a-input-number>
+    </a-form-item>
+    <a-form-item label="scMinPostsIntervalMs">
+        <a-input v-model.trim="inbound.stream.xhttp.scMinPostsIntervalMs"></a-input>
+    </a-form-item>
+</a-form>
+<a-form layout="inline" v-if="inbound.stream.xhttp.mode === 'stream-up'">
+    <a-form-item label="scStreamUpServerSecs">
+        <a-input v-model.trim="inbound.stream.xhttp.scStreamUpServerSecs"></a-input>
+    </a-form-item>
+</a-form>
+<a-divider>xHTTP placement / padding</a-divider>
+<a-form layout="inline">
+    <a-form-item label="xPaddingObfsMode">
+        <a-switch v-model="inbound.stream.xhttp.xPaddingObfsMode"></a-switch>
+    </a-form-item>
+    <template v-if="inbound.stream.xhttp.xPaddingObfsMode">
+        <a-form-item label="xPaddingKey"><a-input v-model.trim="inbound.stream.xhttp.xPaddingKey"></a-input></a-form-item>
+        <a-form-item label="xPaddingHeader"><a-input v-model.trim="inbound.stream.xhttp.xPaddingHeader"></a-input></a-form-item>
+        <a-form-item label="xPaddingPlacement"><a-input v-model.trim="inbound.stream.xhttp.xPaddingPlacement"></a-input></a-form-item>
+        <a-form-item label="xPaddingMethod"><a-input v-model.trim="inbound.stream.xhttp.xPaddingMethod"></a-input></a-form-item>
+    </template>
+    <a-form-item label="sessionIDPlacement"><a-input v-model.trim="inbound.stream.xhttp.sessionIDPlacement"></a-input></a-form-item>
+    <a-form-item label="sessionIDKey"><a-input v-model.trim="inbound.stream.xhttp.sessionIDKey"></a-input></a-form-item>
+    <a-form-item label="sessionIDTable"><a-input v-model.trim="inbound.stream.xhttp.sessionIDTable"></a-input></a-form-item>
+    <a-form-item label="sessionIDLength"><a-input v-model.trim="inbound.stream.xhttp.sessionIDLength"></a-input></a-form-item>
+    <a-form-item label="seqPlacement"><a-input v-model.trim="inbound.stream.xhttp.seqPlacement"></a-input></a-form-item>
+    <a-form-item label="seqKey"><a-input v-model.trim="inbound.stream.xhttp.seqKey"></a-input></a-form-item>
+    <a-form-item label="uplinkDataPlacement"><a-input v-model.trim="inbound.stream.xhttp.uplinkDataPlacement"></a-input></a-form-item>
+    <a-form-item label="uplinkDataKey"><a-input v-model.trim="inbound.stream.xhttp.uplinkDataKey"></a-input></a-form-item>
+</a-form>
+<a-form layout="inline">
+    <a-form-item label="请求头">
+        <a-button size="small" @click="inbound.stream.xhttp.addHeader('Host', '')">+</a-button>
+        <a-input-group v-for="(header, index) in inbound.stream.xhttp.headers" :key="index">
+            <a-input style="width: 50%" v-model.trim="header.name" addon-before="名称"></a-input>
+            <a-input style="width: 50%" v-model.trim="header.value" addon-before="值">
+                <template slot="addonAfter">
+                    <a-button size="small" @click="inbound.stream.xhttp.removeHeader(index)">-</a-button>
+                </template>
+            </a-input>
+        </a-input-group>
+    </a-form-item>
+</a-form>
+<a-divider>XMUX</a-divider>
+<a-form layout="inline">
+    <a-form-item label="enableXmux"><a-switch v-model="inbound.stream.xhttp.enableXmux"></a-switch></a-form-item>
+    <template v-if="inbound.stream.xhttp.enableXmux">
+        <a-form-item label="maxConcurrency"><a-input v-model.trim="inbound.stream.xhttp.xmux.maxConcurrency"></a-input></a-form-item>
+        <a-form-item label="maxConnections"><a-input v-model="inbound.stream.xhttp.xmux.maxConnections"></a-input></a-form-item>
+        <a-form-item label="cMaxReuseTimes"><a-input v-model="inbound.stream.xhttp.xmux.cMaxReuseTimes"></a-input></a-form-item>
+        <a-form-item label="hMaxRequestTimes"><a-input v-model.trim="inbound.stream.xhttp.xmux.hMaxRequestTimes"></a-input></a-form-item>
+        <a-form-item label="hMaxReusableSecs"><a-input v-model.trim="inbound.stream.xhttp.xmux.hMaxReusableSecs"></a-input></a-form-item>
+        <a-form-item label="hKeepAlivePeriod"><a-input-number v-model="inbound.stream.xhttp.xmux.hKeepAlivePeriod" :min="0"></a-input-number></a-form-item>
+    </template>
+</a-form>
+{{end}}

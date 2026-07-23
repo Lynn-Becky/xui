@@ -17,6 +17,9 @@
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
         <a-layout-content>
+            <a-alert v-if="showHttpWarning" type="warning" show-icon closable @close="showHttpWarning = false"
+                     message="面板当前通过 HTTP 访问，登录凭据和会话 Cookie 会以明文传输。请配置 TLS 或使用 HTTPS 反向代理。"
+                     style="margin-bottom: 16px"></a-alert>
             <a-spin :spinning="spinning" :delay="200" :tip="loadingTip"/>
             <transition name="list" appear>
                 <a-row>
@@ -278,6 +281,7 @@
             versionModal,
             spinning: false,
             loadingTip: '加载中',
+            showHttpWarning: window.location.protocol !== 'https:',
         },
         methods: {
             loading(spinning, tip = '加载中') {

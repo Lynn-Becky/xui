@@ -35,6 +35,9 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.POST("/status", a.status)
 	g.POST("/getXrayVersion", a.getXrayVersion)
 	g.POST("/installXray/:version", a.installXray)
+	g.POST("/getNewX25519Cert", a.getNewX25519Cert)
+	g.POST("/getNewMldsa65", a.getNewMldsa65)
+	g.POST("/getNewVlessEnc", a.getNewVlessEnc)
 }
 
 func (a *ServerController) refreshStatus() {
@@ -82,4 +85,19 @@ func (a *ServerController) installXray(c *gin.Context) {
 	version := c.Param("version")
 	err := a.serverService.UpdateXray(version)
 	jsonMsg(c, "安装 xray", err)
+}
+
+func (a *ServerController) getNewX25519Cert(c *gin.Context) {
+	keyPair, err := a.serverService.GetNewX25519Cert()
+	jsonObj(c, keyPair, err)
+}
+
+func (a *ServerController) getNewMldsa65(c *gin.Context) {
+	keyPair, err := a.serverService.GetNewMldsa65()
+	jsonObj(c, keyPair, err)
+}
+
+func (a *ServerController) getNewVlessEnc(c *gin.Context) {
+	auths, err := a.serverService.GetNewVlessEnc()
+	jsonObj(c, map[string]interface{}{"auths": auths}, err)
 }

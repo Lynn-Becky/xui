@@ -15,7 +15,9 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 	"x-ui/logger"
 	"x-ui/util/sys"
@@ -70,6 +72,113 @@ type Release struct {
 
 type ServerService struct {
 	xrayService XrayService
+}
+
+func parseXrayKeyPairOutput(output string) (string, string, error) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) < 2 {
+		return "", "", fmt.Errorf("unexpected xray key generator output")
+	}
+	first := strings.SplitN(lines[0], ":", 2)
+	second := strings.SplitN(lines[1], ":", 2)
+	if len(first) != 2 || len(second) != 2 {
+		return "", "", fmt.Errorf("unexpected xray key generator output")
+	}
+	return strings.TrimSpace(first[1]), strings.TrimSpace(second[1]), nil
+}
+
+func (s *ServerService) GetNewX25519Cert() (map[string]string, error) {
+	output, err := exec.Command(xray.GetBinaryPath(), "x25519").Output()
+	if err != nil {
+		return nil, err
+	}
+	privateKey, publicKey, err := parseXrayKeyPairOutput(string(output))
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"privateKey": privateKey, "publicKey": publicKey}, nil
+}
+
+func (s *ServerService) GetNewMldsa65() (map[string]string, error) {
+	output, err := exec.Command(xray.GetBinaryPath(), "mldsa65").Output()
+	if err != nil {
+		return nil, err
+	}
+	seed, verify, err := parseXrayKeyPairOutput(string(output))
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"seed": seed, "verify": verify}, nil
+}
+
+func (s *ServerService) GetNewVlessEnc() ([]map[string]string, error) {
+	output, err := exec.Command(xray.GetBinaryPath(), "vlessenc").Output()
+	if err != nil {
+		return nil, err
+	}
+	auths := parseVlessEncAuths(string(output))
+	if len(auths) == 0 {
+		return nil, fmt.Errorf("unexpected xray vlessenc output")
+	}
+	auths = append(auths, deriveVlessEncModes(auths)...)
+	return auths, nil
+}
+
+func deriveVlessEncModes(auths []map[string]string) []map[string]string {
+	var extra []map[string]string
+	for _, auth := range auths {
+		for _, mode := range []string{"xorpub", "random"} {
+			decryption := strings.Replace(auth["decryption"], ".native.", "."+mode+".", 1)
+			encryption := strings.Replace(auth["encryption"], ".native.", "."+mode+".", 1)
+			if decryption == auth["decryption"] && encryption == auth["encryption"] {
+				continue
+			}
+			extra = append(extra, map[string]string{
+				"id":         auth["id"] + "_" + mode,
+				"label":      auth["label"] + " (" + mode + ")",
+				"decryption": decryption,
+				"encryption": encryption,
+			})
+		}
+	}
+	return extra
+}
+
+func parseVlessEncAuths(output string) []map[string]string {
+	var auths []map[string]string
+	var current map[string]string
+	for _, rawLine := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(line, "Authentication:") {
+			if current != nil {
+				auths = append(auths, current)
+			}
+			label := strings.TrimSpace(strings.TrimPrefix(line, "Authentication:"))
+			normalized := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(label))
+			id := normalized
+			if strings.Contains(normalized, "mlkem768") {
+				id = "mlkem768"
+			} else if strings.Contains(normalized, "x25519") {
+				id = "x25519"
+			}
+			current = map[string]string{"id": id, "label": label}
+			continue
+		}
+		if current == nil || (!strings.HasPrefix(line, `"decryption"`) && !strings.HasPrefix(line, `"encryption"`)) {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.Trim(parts[0], `" `)
+		value := strings.Trim(strings.TrimSuffix(strings.TrimSpace(parts[1]), ","), `" `)
+		current[key] = value
+	}
+	if current != nil {
+		auths = append(auths, current)
+	}
+	return auths
 }
 
 func (s *ServerService) GetStatus(lastStatus *Status) *Status {

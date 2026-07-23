@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -99,6 +100,15 @@ func showSetting(show bool) {
 		if err != nil {
 			fmt.Println("get current port fialed,error info:", err)
 		}
+		webBasePath, err := settingService.GetBasePath()
+		if err != nil {
+			fmt.Println("get current webBasePath failed,error info:", err)
+		}
+		webCertFile, certErr := settingService.GetCertFile()
+		webKeyFile, keyErr := settingService.GetKeyFile()
+		if certErr != nil || keyErr != nil {
+			fmt.Println("get current web certificate paths failed:", certErr, keyErr)
+		}
 		userService := service.UserService{}
 		userModel, err := userService.GetFirstUser()
 		if err != nil {
@@ -113,7 +123,51 @@ func showSetting(show bool) {
 		fmt.Println("username:", username)
 		fmt.Println("userpasswd:", userpasswd)
 		fmt.Println("port:", port)
+		fmt.Println("webBasePath:", webBasePath)
+		fmt.Println("webCertFile:", webCertFile)
+		fmt.Println("webKeyFile:", webKeyFile)
 	}
+}
+
+func updateCert(certFile, keyFile string) error {
+	if (certFile == "") != (keyFile == "") {
+		return fmt.Errorf("web certificate and key must be configured together")
+	}
+	if certFile != "" {
+		if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+			return fmt.Errorf("invalid web certificate or key: %w", err)
+		}
+	}
+	if err := database.InitDB(config.GetDBPath()); err != nil {
+		return err
+	}
+	settingService := service.SettingService{}
+	if err := settingService.SetCertFile(certFile); err != nil {
+		return err
+	}
+	if err := settingService.SetKeyFile(keyFile); err != nil {
+		return err
+	}
+	fmt.Println("set web certificate paths success")
+	return nil
+}
+
+func showCert() error {
+	if err := database.InitDB(config.GetDBPath()); err != nil {
+		return err
+	}
+	settingService := service.SettingService{}
+	certFile, err := settingService.GetCertFile()
+	if err != nil {
+		return err
+	}
+	keyFile, err := settingService.GetKeyFile()
+	if err != nil {
+		return err
+	}
+	fmt.Println("cert:", certFile)
+	fmt.Println("key:", keyFile)
+	return nil
 }
 
 func updateTgbotEnableSts(status bool) {
@@ -176,11 +230,11 @@ func updateTgbotSetting(tgBotToken string, tgBotChatid int, tgBotRuntime string)
 	}
 }
 
-func updateSetting(port int, username string, password string) {
+func updateSetting(port int, username string, password string, webBasePath string) error {
 	err := database.InitDB(config.GetDBPath())
 	if err != nil {
 		fmt.Println(err)
-		return
+		return err
 	}
 
 	settingService := service.SettingService{}
@@ -189,6 +243,7 @@ func updateSetting(port int, username string, password string) {
 		err := settingService.SetPort(port)
 		if err != nil {
 			fmt.Println("set port failed:", err)
+			return err
 		} else {
 			fmt.Printf("set port %v success", port)
 		}
@@ -198,10 +253,21 @@ func updateSetting(port int, username string, password string) {
 		err := userService.UpdateFirstUser(username, password)
 		if err != nil {
 			fmt.Println("set username and password failed:", err)
+			return err
 		} else {
 			fmt.Println("set username and password success")
 		}
 	}
+	if webBasePath != "" {
+		err := settingService.SetBasePath(webBasePath)
+		if err != nil {
+			fmt.Println("set web base path failed:", err)
+			return err
+		} else {
+			fmt.Println("set web base path success")
+		}
+	}
+	return nil
 }
 
 func main() {
@@ -223,6 +289,7 @@ func main() {
 	var port int
 	var username string
 	var password string
+	var webBasePath string
 	var tgbottoken string
 	var tgbotchatid int
 	var enabletgbot bool
@@ -234,10 +301,21 @@ func main() {
 	settingCmd.IntVar(&port, "port", 0, "set panel port")
 	settingCmd.StringVar(&username, "username", "", "set login username")
 	settingCmd.StringVar(&password, "password", "", "set login password")
+	settingCmd.StringVar(&webBasePath, "webBasePath", "", "set panel base path")
 	settingCmd.StringVar(&tgbottoken, "tgbottoken", "", "set telegrame bot token")
 	settingCmd.StringVar(&tgbotRuntime, "tgbotRuntime", "", "set telegrame bot cron time")
 	settingCmd.IntVar(&tgbotchatid, "tgbotchatid", 0, "set telegrame bot chat id")
 	settingCmd.BoolVar(&enabletgbot, "enabletgbot", false, "enable telegram bot notify")
+
+	certCmd := flag.NewFlagSet("cert", flag.ExitOnError)
+	var webCertFile string
+	var webKeyFile string
+	var getCert bool
+	var resetCert bool
+	certCmd.StringVar(&webCertFile, "webCert", "", "set panel certificate file")
+	certCmd.StringVar(&webKeyFile, "webCertKey", "", "set panel certificate key file")
+	certCmd.BoolVar(&getCert, "getCert", false, "show panel certificate paths")
+	certCmd.BoolVar(&resetCert, "reset", false, "clear panel certificate paths")
 
 	oldUsage := flag.Usage
 	flag.Usage = func() {
@@ -247,6 +325,7 @@ func main() {
 		fmt.Println("    run            run web panel")
 		fmt.Println("    v2-ui          migrate form v2-ui")
 		fmt.Println("    setting        set settings")
+		fmt.Println("    cert           set or show panel certificate paths")
 	}
 
 	flag.Parse()
@@ -282,7 +361,9 @@ func main() {
 		if reset {
 			resetSetting()
 		} else {
-			updateSetting(port, username, password)
+			if err := updateSetting(port, username, password, webBasePath); err != nil {
+				os.Exit(1)
+			}
 		}
 		if show {
 			showSetting(show)
@@ -290,13 +371,37 @@ func main() {
 		if (tgbottoken != "") || (tgbotchatid != 0) || (tgbotRuntime != "") {
 			updateTgbotSetting(tgbottoken, tgbotchatid, tgbotRuntime)
 		}
+	case "cert":
+		if err := certCmd.Parse(os.Args[2:]); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		if getCert {
+			if err := showCert(); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			return
+		}
+		if resetCert {
+			webCertFile, webKeyFile = "", ""
+		} else if webCertFile == "" && webKeyFile == "" {
+			certCmd.Usage()
+			os.Exit(1)
+		}
+		if err := updateCert(webCertFile, webKeyFile); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 	default:
-		fmt.Println("except 'run' or 'v2-ui' or 'setting' subcommands")
+		fmt.Println("except 'run', 'v2-ui', 'setting' or 'cert' subcommands")
 		fmt.Println()
 		runCmd.Usage()
 		fmt.Println()
 		v2uiCmd.Usage()
 		fmt.Println()
 		settingCmd.Usage()
+		fmt.Println()
+		certCmd.Usage()
 	}
 }

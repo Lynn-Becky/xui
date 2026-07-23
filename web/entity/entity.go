@@ -37,8 +37,28 @@ type AllSetting struct {
 	TgBotChatId        int    `json:"tgBotChatId" form:"tgBotChatId"`
 	TgRunTime          string `json:"tgRunTime" form:"tgRunTime"`
 	XrayTemplateConfig string `json:"xrayTemplateConfig" form:"xrayTemplateConfig"`
+	WarpUpdateInterval int    `json:"warpUpdateInterval" form:"warpUpdateInterval"`
 
 	TimeLocation string `json:"timeLocation" form:"timeLocation"`
+}
+
+// NormalizeBasePath converts a panel URI path to its canonical /…/ form.
+// Keep the character rules in line with 3x-ui: a path must not contain a
+// backslash, space, or control character, because those values are ambiguous
+// when used for routing and in shell-provided panel URLs.
+func NormalizeBasePath(basePath string) (string, error) {
+	for _, r := range basePath {
+		if r == '\\' || r == ' ' || r < 0x20 || r == 0x7f {
+			return "", common.NewError("URI path contains an invalid character: web base path")
+		}
+	}
+	if !strings.HasPrefix(basePath, "/") {
+		basePath = "/" + basePath
+	}
+	if !strings.HasSuffix(basePath, "/") {
+		basePath += "/"
+	}
+	return basePath, nil
 }
 
 func (s *AllSetting) CheckValid() error {
@@ -53,24 +73,32 @@ func (s *AllSetting) CheckValid() error {
 		return common.NewError("web port is not a valid port:", s.WebPort)
 	}
 
-	if s.WebCertFile != "" || s.WebKeyFile != "" {
+	if (s.WebCertFile == "") != (s.WebKeyFile == "") {
+		return common.NewError("both web certificate and key files must be configured together")
+	}
+	if s.WebCertFile != "" {
 		_, err := tls.LoadX509KeyPair(s.WebCertFile, s.WebKeyFile)
 		if err != nil {
 			return common.NewErrorf("cert file <%v> or key file <%v> invalid: %v", s.WebCertFile, s.WebKeyFile, err)
 		}
 	}
 
-	if !strings.HasPrefix(s.WebBasePath, "/") {
-		s.WebBasePath = "/" + s.WebBasePath
+	basePath, err := NormalizeBasePath(s.WebBasePath)
+	if err != nil {
+		return err
 	}
-	if !strings.HasSuffix(s.WebBasePath, "/") {
-		s.WebBasePath += "/"
-	}
+	s.WebBasePath = basePath
 
 	xrayConfig := &xray.Config{}
-	err := json.Unmarshal([]byte(s.XrayTemplateConfig), xrayConfig)
+	err = json.Unmarshal([]byte(s.XrayTemplateConfig), xrayConfig)
 	if err != nil {
 		return common.NewError("xray template config invalid:", err)
+	}
+	if err := xrayConfig.ValidateOutboundConfigs(); err != nil {
+		return common.NewError("xray template config invalid outbounds:", err)
+	}
+	if s.WarpUpdateInterval < 0 {
+		return common.NewError("warp update interval must not be negative")
 	}
 
 	_, err = time.LoadLocation(s.TimeLocation)

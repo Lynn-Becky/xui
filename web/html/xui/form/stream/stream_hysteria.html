@@ -1,0 +1,30 @@
+{{define "form/hysteriaStream"}}
+<a-form layout="inline">
+    <a-form-item label="传输"><a-input value="hysteria" disabled style="width: 120px"></a-input></a-form-item>
+    <a-form-item label="TLS"><a-input value="TLS / h3" disabled style="width: 120px"></a-input></a-form-item>
+    <a-form-item label="UDP Idle Timeout (秒)"><a-input-number v-model.number="inbound.stream.hysteria.udpIdleTimeout" :min="2" :max="600"></a-input-number></a-form-item>
+    <a-form-item label="伪装"><a-switch :checked="!!inbound.stream.hysteria.masquerade" @change="checked => inbound.stream.hysteria.masquerade = checked ? {type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', headers: {}, statusCode: 0} : undefined"></a-switch></a-form-item>
+</a-form>
+<template v-if="inbound.stream.hysteria.masquerade">
+    <a-form layout="inline">
+        <a-form-item label="类型">
+            <a-select v-model="inbound.stream.hysteria.masquerade.type" style="width: 150px">
+                <a-select-option value="">默认 404</a-select-option>
+                <a-select-option value="proxy">反向代理</a-select-option>
+                <a-select-option value="file">目录</a-select-option>
+                <a-select-option value="string">固定内容</a-select-option>
+            </a-select>
+        </a-form-item>
+        <template v-if="inbound.stream.hysteria.masquerade.type === 'proxy'">
+            <a-form-item label="上游 URL"><a-input v-model.trim="inbound.stream.hysteria.masquerade.url" placeholder="https://www.example.com"></a-input></a-form-item>
+            <a-form-item label="重写 Host"><a-switch v-model="inbound.stream.hysteria.masquerade.rewriteHost"></a-switch></a-form-item>
+            <a-form-item label="跳过 TLS 验证"><a-switch v-model="inbound.stream.hysteria.masquerade.insecure"></a-switch></a-form-item>
+        </template>
+        <a-form-item v-if="inbound.stream.hysteria.masquerade.type === 'file'" label="目录"><a-input v-model.trim="inbound.stream.hysteria.masquerade.dir"></a-input></a-form-item>
+        <template v-if="inbound.stream.hysteria.masquerade.type === 'string'">
+            <a-form-item label="状态码"><a-input-number v-model.number="inbound.stream.hysteria.masquerade.statusCode" :min="0" :max="599"></a-input-number></a-form-item>
+            <a-form-item label="内容"><a-input type="textarea" :rows="2" v-model="inbound.stream.hysteria.masquerade.content"></a-input></a-form-item>
+        </template>
+    </a-form>
+</template>
+{{end}}

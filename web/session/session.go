@@ -4,6 +4,8 @@ import (
 	"encoding/gob"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"net/http"
+	"time"
 	"x-ui/database/model"
 )
 
@@ -38,9 +40,33 @@ func IsLogin(c *gin.Context) bool {
 func ClearSession(c *gin.Context) {
 	s := sessions.Default(c)
 	s.Clear()
+	cookiePath := c.GetString("base_path")
+	if cookiePath == "" {
+		cookiePath = "/"
+	}
+	directHTTPS, _ := c.Get("direct_https")
+	secure, _ := directHTTPS.(bool)
 	s.Options(sessions.Options{
-		Path:   "/",
-		MaxAge: -1,
+		Path:     cookiePath,
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
 	})
-	s.Save()
+	_ = s.Save()
+
+	// Earlier releases always used Path=/ for this cookie. Clear that legacy
+	// variant too when the panel now runs under a randomized base path.
+	if cookiePath != "/" {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "session",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			Expires:  time.Unix(0, 0),
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 }

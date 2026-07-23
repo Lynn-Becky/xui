@@ -3,12 +3,40 @@
     <a-form-item label="id">
         <a-input v-model.trim="inbound.settings.vlesses[0].id"></a-input>
     </a-form-item>
-    <a-form-item v-if="inbound.xtls" label="flow">
-        <a-select v-model="inbound.settings.vlesses[0].flow" style="width: 150px">
+    <a-form-item label="email">
+        <a-input v-model.trim="inbound.settings.vlesses[0].email"></a-input>
+    </a-form-item>
+    <a-form-item v-if="inbound.canEnableTlsFlow()" label="flow">
+        <a-select v-model="inbound.settings.vlesses[0].flow" style="width: 220px">
             <a-select-option value="">无</a-select-option>
             <a-select-option v-for="key in FLOW_CONTROL" :value="key">[[ key ]]</a-select-option>
         </a-select>
     </a-form-item>
+    <a-form-item label="decryption">
+        <a-input v-model.trim="inbound.settings.decryption"></a-input>
+    </a-form-item>
+    <a-form-item label="encryption">
+        <a-input v-model.trim="inbound.settings.encryption"></a-input>
+        <a-select v-model="vlessEncryptionAuth" style="width: 210px">
+            <a-select-option v-for="auth in vlessEncryptionAuths" :key="auth.id" :value="auth.id">
+                [[ auth.label ]]
+            </a-select-option>
+        </a-select>
+        <a-button size="small" type="primary" @click="generateVlessEncryption">生成</a-button>
+        <a-button size="small" @click="clearVlessEncryption">清除</a-button>
+    </a-form-item>
+</a-form>
+
+<a-form layout="inline" v-if="inbound.canEnableTlsFlow()">
+    <a-form-item label="Vision testseed">
+        <a-switch :checked="Array.isArray(inbound.settings.testseed)"
+                  @change="checked => inbound.settings.testseed = checked ? [900, 500, 900, 256] : null"></a-switch>
+    </a-form-item>
+    <template v-if="Array.isArray(inbound.settings.testseed)">
+        <a-form-item v-for="(value, index) in inbound.settings.testseed" :key="index" :label="'seed ' + (index + 1)">
+            <a-input-number v-model="inbound.settings.testseed[index]" :min="1"></a-input-number>
+        </a-form-item>
+    </template>
 </a-form>
 
 <a-form layout="inline">

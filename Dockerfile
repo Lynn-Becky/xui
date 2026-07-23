@@ -3,6 +3,19 @@ WORKDIR /root
 COPY . .
 RUN go build main.go
 
+FROM alpine:3.22 AS xray
+ARG TARGETARCH=amd64
+ARG XRAY_VERSION=v26.7.11
+RUN apk add --no-cache curl unzip \
+    && case "${TARGETARCH}" in \
+         amd64) archive="Xray-linux-64.zip" ;; \
+         arm64) archive="Xray-linux-arm64-v8a.zip" ;; \
+         *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && curl -fL "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${archive}" -o /tmp/xray.zip \
+    && mkdir /out \
+    && unzip -j /tmp/xray.zip xray -d /out \
+    && mv /out/xray "/out/xray-linux-${TARGETARCH}"
 
 FROM debian:11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends -y ca-certificates \
@@ -10,5 +23,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends -y ca-certifica
 WORKDIR /root
 COPY --from=builder  /root/main /root/x-ui
 COPY bin/. /root/bin/.
+COPY --from=xray /out/ /root/bin/
 VOLUME [ "/etc/x-ui" ]
 CMD [ "./x-ui" ]

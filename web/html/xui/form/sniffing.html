@@ -13,4 +13,22 @@
     <a-switch v-model="inbound.sniffing.enabled"></a-switch>
   </a-form-item>
 </a-form>
+<a-form layout="inline" v-if="inbound.sniffing.enabled">
+    <a-form-item label="destOverride">
+        <a-select mode="multiple" v-model="inbound.sniffing.destOverride" style="min-width: 280px">
+            <a-select-option value="http">http</a-select-option>
+            <a-select-option value="tls">tls</a-select-option>
+            <a-select-option value="quic">quic</a-select-option>
+            <a-select-option value="fakedns">fakedns</a-select-option>
+        </a-select>
+    </a-form-item>
+    <a-form-item label="metadataOnly"><a-switch v-model="inbound.sniffing.metadataOnly"></a-switch></a-form-item>
+    <a-form-item label="routeOnly"><a-switch v-model="inbound.sniffing.routeOnly"></a-switch></a-form-item>
+    <a-form-item label="ipsExcluded">
+        <a-select mode="tags" v-model="inbound.sniffing.ipsExcluded" style="min-width: 260px"></a-select>
+    </a-form-item>
+    <a-form-item label="domainsExcluded">
+        <a-select mode="tags" v-model="inbound.sniffing.domainsExcluded" style="min-width: 260px"></a-select>
+    </a-form-item>
+</a-form>
 {{end}}

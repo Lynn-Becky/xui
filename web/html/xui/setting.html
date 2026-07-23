@@ -23,6 +23,21 @@
     .ant-tabs-top-bar {
         background: white;
     }
+
+    .outbound-list {
+        background: white;
+        min-width: 720px;
+    }
+
+    .outbound-list .ant-list-item {
+        display: flex;
+        align-items: center;
+        padding: 12px 18px;
+    }
+
+    .outbound-modal-section {
+        margin-bottom: 18px;
+    }
 </style>
 <body>
 <a-layout id="app" v-cloak>
@@ -79,6 +94,37 @@
                                 <setting-list-item type="text" title="电报机器人通知时间" desc="采用Crontab定时格式,重启面板生效"  v-model="allSetting.tgRunTime"></setting-list-item>
                             </a-list>
                         </a-tab-pane>
+                        <a-tab-pane key="6" tab="出站">
+                            <a-alert v-if="outboundTemplateError" type="error" show-icon
+                                     :message="outboundTemplateError" style="margin: 12px 0"></a-alert>
+                            <a-card :bordered="false" style="background: white">
+                                <a-space direction="vertical" style="width: 100%">
+                                    <a-alert type="info" show-icon
+                                             message="出站直接保存到 Xray 配置模版的 outbounds 数组；模版中的其他内容不会被改动。第一个出站为默认出站。"></a-alert>
+                                    <a-space>
+                                        <a-button type="primary" icon="plus" @click="addOutbound">添加出站</a-button>
+                                        <a-button icon="cloud" @click="openWarpModal">Cloudflare WARP</a-button>
+                                    </a-space>
+                                    <a-list class="outbound-list" :data-source="outboundItems" :locale="{emptyText: '模版中没有出站'}">
+                                        <a-list-item slot="renderItem" slot-scope="outbound, index">
+                                            <a-space style="flex: 1">
+                                                <a-tag :color="index === 0 ? 'green' : 'blue'">[[ index === 0 ? '默认' : index + 1 ]]</a-tag>
+                                                <strong>[[ outbound.protocol ]]</strong>
+                                                <span>[[ outbound.tag || '未设置标签' ]]</span>
+                                            </a-space>
+                                            <a-space>
+                                                <a-button size="small" icon="up" :disabled="index === 0" @click="moveOutbound(index, -1)"></a-button>
+                                                <a-button size="small" icon="down" :disabled="index === outboundItems.length - 1" @click="moveOutbound(index, 1)"></a-button>
+                                                <a-button size="small" @click="editOutbound(index)">编辑</a-button>
+                                                <a-popconfirm title="删除这个出站？" ok-text="删除" cancel-text="取消" @confirm="removeOutbound(index)">
+                                                    <a-button size="small" type="danger">删除</a-button>
+                                                </a-popconfirm>
+                                            </a-space>
+                                        </a-list-item>
+                                    </a-list>
+                                </a-space>
+                            </a-card>
+                        </a-tab-pane>
                         <a-tab-pane key="5" tab="其他设置">
                             <a-list item-layout="horizontal" style="background: white">
                                 <setting-list-item type="text" title="时区" desc="定时任务按照该时区的时间运行，重启面板生效" v-model="allSetting.timeLocation"></setting-list-item>
@@ -89,6 +135,170 @@
             </a-spin>
         </a-layout-content>
     </a-layout>
+
+<a-modal :visible="outboundModal.visible" :width="900" :mask-closable="false"
+         :title="outboundModal.index < 0 ? '添加出站' : '编辑出站'"
+         ok-text="保存出站" cancel-text="取消" @ok="saveOutbound" @cancel="closeOutboundModal">
+    <a-tabs v-if="editingOutbound" v-model="outboundModal.tab">
+        <a-tab-pane key="basic" tab="基础">
+            <a-form-model :label-col="{span: 6}" :wrapper-col="{span: 16}">
+                <a-form-model-item label="协议">
+                    <a-select v-model="editingOutbound.protocol" @change="changeOutboundProtocol">
+                        <a-select-option v-for="protocol in outboundProtocols" :key="protocol" :value="protocol">[[ protocol ]]</a-select-option>
+                    </a-select>
+                </a-form-model-item>
+                <a-form-model-item label="标签"><a-input v-model.trim="editingOutbound.tag" placeholder="可选"></a-input></a-form-model-item>
+                <a-form-model-item label="发送地址"><a-input v-model.trim="editingOutbound.sendThrough" placeholder="可选，例如 0.0.0.0"></a-input></a-form-model-item>
+                <a-form-model-item label="目标域名策略"><a-input v-model.trim="editingOutbound.targetStrategy" placeholder="可选"></a-input></a-form-model-item>
+
+                <template v-if="isRemoteOutbound(editingOutbound.protocol)">
+                    <a-form-model-item label="服务器地址"><a-input v-model.trim="editingOutbound.settings.address"></a-input></a-form-model-item>
+                    <a-form-model-item label="服务器端口"><a-input-number v-model.number="editingOutbound.settings.port" :min="1" :max="65535"></a-input-number></a-form-model-item>
+                </template>
+                <template v-if="editingOutbound.protocol === 'vmess'">
+                    <a-form-model-item label="用户 ID"><a-input v-model.trim="editingOutbound.settings.id"></a-input></a-form-model-item>
+                    <a-form-model-item label="加密"><a-select v-model="editingOutbound.settings.security"><a-select-option value="auto">auto</a-select-option><a-select-option value="aes-128-gcm">aes-128-gcm</a-select-option><a-select-option value="chacha20-poly1305">chacha20-poly1305</a-select-option></a-select></a-form-model-item>
+                </template>
+                <template v-if="editingOutbound.protocol === 'vless'">
+                    <a-form-model-item label="用户 ID"><a-input v-model.trim="editingOutbound.settings.id"></a-input></a-form-model-item>
+                    <a-form-model-item label="Flow"><a-input v-model.trim="editingOutbound.settings.flow" placeholder="例如 xtls-rprx-vision"></a-input></a-form-model-item>
+                    <a-form-model-item label="加密"><a-input v-model.trim="editingOutbound.settings.encryption"></a-input></a-form-model-item>
+                    <a-form-model-item label="反向标签"><a-input v-model.trim="editingOutbound.settings.reverseTag" placeholder="可选"></a-input></a-form-model-item>
+                    <template v-if="editingOutbound.settings.flow === 'xtls-rprx-vision'">
+                        <a-form-model-item label="testpre"><a-input-number v-model.number="editingOutbound.settings.testpre" :min="0"></a-input-number></a-form-model-item>
+                        <a-form-model-item label="testseed"><a-input v-model="editingOutboundTestseed" placeholder="4 个正整数，以逗号分隔"></a-input></a-form-model-item>
+                    </template>
+                </template>
+                <template v-if="editingOutbound.protocol === 'trojan'"><a-form-model-item label="密码"><a-input-password v-model="editingOutbound.settings.password"></a-input-password></a-form-model-item></template>
+                <template v-if="editingOutbound.protocol === 'shadowsocks'">
+                    <a-form-model-item label="加密方法"><a-input v-model.trim="editingOutbound.settings.method"></a-input></a-form-model-item>
+                    <a-form-model-item label="密码"><a-input-password v-model="editingOutbound.settings.password"></a-input-password></a-form-model-item>
+                    <a-form-model-item label="启用 UoT"><a-switch v-model="editingOutbound.settings.uot"></a-switch></a-form-model-item>
+                    <a-form-model-item label="UoT 版本"><a-input-number v-model.number="editingOutbound.settings.UoTVersion" :min="1"></a-input-number></a-form-model-item>
+                </template>
+                <template v-if="editingOutbound.protocol === 'socks' || editingOutbound.protocol === 'http'">
+                    <a-form-model-item label="用户名"><a-input v-model.trim="editingOutbound.settings.user" placeholder="留空时不发送认证"></a-input></a-form-model-item>
+                    <a-form-model-item label="密码"><a-input-password v-model="editingOutbound.settings.pass"></a-input-password></a-form-model-item>
+                    <a-form-model-item v-if="editingOutbound.protocol === 'http'" label="HTTP 请求头 JSON"><a-textarea v-model="editingHttpHeaders" :auto-size="{minRows: 2, maxRows: 5}" placeholder='{"Host":"example.com"}'></a-textarea></a-form-model-item>
+                </template>
+                <template v-if="editingOutbound.protocol === 'wireguard'">
+                    <a-form-model-item label="私钥"><a-input v-model.trim="editingOutbound.settings.secretKey"><a-button slot="addonAfter" @click="generateWireguardKey">生成</a-button></a-input></a-form-model-item>
+                    <a-form-model-item label="公钥"><a-input :value="wireguardPublicKey" disabled></a-input></a-form-model-item>
+                    <a-form-model-item label="MTU"><a-input-number v-model.number="editingOutbound.settings.mtu" :min="0"></a-input-number></a-form-model-item>
+                    <a-form-model-item label="本地地址"><a-input v-model="editingOutbound.settings.address" placeholder="以逗号分隔"></a-input></a-form-model-item>
+                    <a-form-model-item label="保留字节"><a-input v-model="editingOutbound.settings.reserved" placeholder="以逗号分隔的整数"></a-input></a-form-model-item>
+                    <a-form-model-item label="域名策略"><a-input v-model.trim="editingOutbound.settings.domainStrategy"></a-input></a-form-model-item>
+                    <a-form-model-item label="禁用内核 TUN"><a-switch v-model="editingOutbound.settings.noKernelTun"></a-switch></a-form-model-item>
+                    <a-form-model-item label="Peers JSON"><a-textarea v-model="editingWireguardPeers" :auto-size="{minRows: 4, maxRows: 8}" placeholder='[{"publicKey":"...","allowedIPs":["0.0.0.0/0"],"endpoint":"host:port"}]'></a-textarea></a-form-model-item>
+                </template>
+                <template v-if="editingOutbound.protocol === 'hysteria'">
+                    <a-alert type="info" show-icon message="Hysteria 始终使用 Xray Hysteria2、TLS 和 ALPN h3。认证与超时在传输页设置。"></a-alert>
+                </template>
+                <template v-if="editingOutbound.protocol === 'freedom'">
+                    <a-form-model-item label="域名策略"><a-input v-model.trim="editingOutbound.settings.domainStrategy"></a-input></a-form-model-item>
+                    <a-form-model-item label="重定向"><a-input v-model.trim="editingOutbound.settings.redirect"></a-input></a-form-model-item>
+                    <a-form-model-item label="用户等级"><a-input-number v-model.number="editingOutbound.settings.userLevel" :min="0"></a-input-number></a-form-model-item>
+                    <a-form-model-item label="代理协议"><a-input-number v-model.number="editingOutbound.settings.proxyProtocol" :min="0"></a-input-number></a-form-model-item>
+                </template>
+                <template v-if="editingOutbound.protocol === 'blackhole'"><a-form-model-item label="响应类型"><a-select v-model="editingOutbound.settings.type"><a-select-option value="">无</a-select-option><a-select-option value="none">none</a-select-option><a-select-option value="http">http</a-select-option></a-select></a-form-model-item></template>
+                <template v-if="editingOutbound.protocol === 'dns'">
+                    <a-form-model-item label="重写网络"><a-select v-model="editingOutbound.settings.rewriteNetwork"><a-select-option value="">不重写</a-select-option><a-select-option value="udp">udp</a-select-option><a-select-option value="tcp">tcp</a-select-option></a-select></a-form-model-item>
+                    <a-form-model-item label="重写地址"><a-input v-model.trim="editingOutbound.settings.rewriteAddress"></a-input></a-form-model-item>
+                    <a-form-model-item label="重写端口"><a-input-number v-model.number="editingOutbound.settings.rewritePort" :min="1" :max="65535"></a-input-number></a-form-model-item>
+                    <a-form-model-item label="规则 JSON"><a-textarea v-model="editingDnsRules" :auto-size="{minRows: 3, maxRows: 8}" placeholder='[{"action":"direct","qType":"A","domain":"example.com"}]'></a-textarea></a-form-model-item>
+                </template>
+                <template v-if="editingOutbound.protocol === 'loopback'">
+                    <a-form-model-item label="入站标签"><a-input v-model.trim="editingOutbound.settings.inboundTag"></a-input></a-form-model-item>
+                    <a-form-model-item label="启用嗅探"><a-switch v-model="editingOutbound.settings.sniffing.enabled"></a-switch></a-form-model-item>
+                </template>
+            </a-form-model>
+        </a-tab-pane>
+        <a-tab-pane key="transport" tab="传输 / TLS" :disabled="!editingOutbound.canEnableStream()">
+            <a-alert v-if="editingOutbound.protocol === 'hysteria'" type="info" show-icon message="Hysteria2 的传输、TLS 与 h3 已锁定。"></a-alert>
+            <a-form-model v-if="editingOutbound.stream" :label-col="{span: 7}" :wrapper-col="{span: 15}">
+                <a-form-model-item label="网络">
+                    <a-select v-model="editingOutbound.stream.network" :disabled="editingOutbound.protocol === 'hysteria'">
+                        <a-select-option value="tcp">RAW / TCP</a-select-option><a-select-option value="kcp">mKCP</a-select-option><a-select-option value="ws">WebSocket</a-select-option><a-select-option value="grpc">gRPC</a-select-option><a-select-option value="httpupgrade">HTTPUpgrade</a-select-option><a-select-option value="xhttp">XHTTP</a-select-option><a-select-option v-if="editingOutbound.protocol === 'hysteria'" value="hysteria">hysteria</a-select-option>
+                    </a-select>
+                </a-form-model-item>
+                <a-form-model-item label="安全"><a-select v-model="editingOutbound.stream.security" :disabled="editingOutbound.protocol === 'hysteria'"><a-select-option value="none">none</a-select-option><a-select-option value="tls">TLS</a-select-option><a-select-option value="reality">REALITY</a-select-option></a-select></a-form-model-item>
+                <template v-if="editingOutbound.stream.network === 'tcp'"><a-form-model-item label="RAW 头类型"><a-select v-model="editingOutbound.stream.tcp.type"><a-select-option value="none">none</a-select-option><a-select-option value="http">http</a-select-option></a-select></a-form-model-item></template>
+                <template v-if="editingOutbound.stream.network === 'kcp'"><a-form-model-item label="mKCP MTU"><a-input-number v-model.number="editingOutbound.stream.kcp.mtu"></a-input-number></a-form-model-item><a-form-model-item label="mKCP TTI"><a-input-number v-model.number="editingOutbound.stream.kcp.tti"></a-input-number></a-form-model-item></template>
+                <template v-if="editingOutbound.stream.network === 'ws'"><a-form-model-item label="WS 路径"><a-input v-model="editingOutbound.stream.ws.path"></a-input></a-form-model-item><a-form-model-item label="WS Host"><a-input v-model="editingOutbound.stream.ws.host"></a-input></a-form-model-item></template>
+                <template v-if="editingOutbound.stream.network === 'grpc'"><a-form-model-item label="gRPC 服务名"><a-input v-model="editingOutbound.stream.grpc.serviceName"></a-input></a-form-model-item><a-form-model-item label="Authority"><a-input v-model="editingOutbound.stream.grpc.authority"></a-input></a-form-model-item></template>
+                <template v-if="editingOutbound.stream.network === 'httpupgrade'"><a-form-model-item label="HTTPUpgrade 路径"><a-input v-model="editingOutbound.stream.httpupgrade.path"></a-input></a-form-model-item><a-form-model-item label="HTTPUpgrade Host"><a-input v-model="editingOutbound.stream.httpupgrade.host"></a-input></a-form-model-item></template>
+                <template v-if="editingOutbound.stream.network === 'xhttp'"><a-form-model-item label="XHTTP 路径"><a-input v-model="editingOutbound.stream.xhttp.path"></a-input></a-form-model-item><a-form-model-item label="XHTTP Host"><a-input v-model="editingOutbound.stream.xhttp.host"></a-input></a-form-model-item><a-form-model-item label="模式"><a-input v-model="editingOutbound.stream.xhttp.mode"></a-input></a-form-model-item></template>
+                <template v-if="editingOutbound.stream.network === 'hysteria'"><a-form-model-item label="认证"><a-input-password v-model="editingOutbound.stream.hysteria.auth"></a-input-password></a-form-model-item><a-form-model-item label="UDP 空闲超时"><a-input-number v-model.number="editingOutbound.stream.hysteria.udpIdleTimeout" :min="0"></a-input-number></a-form-model-item></template>
+                <template v-if="editingOutbound.stream.security === 'tls'">
+                    <a-form-model-item label="TLS ServerName"><a-input v-model="editingOutbound.stream.tls.server"></a-input></a-form-model-item>
+                    <a-form-model-item label="TLS 指纹"><a-input v-model="editingOutbound.stream.tls.settings.fingerprint"></a-input></a-form-model-item>
+                    <a-form-model-item label="ALPN"><a-input v-model="editingTlsAlpn" placeholder="以逗号分隔"></a-input></a-form-model-item>
+                </template>
+                <template v-if="editingOutbound.stream.security === 'reality'">
+                    <a-form-model-item label="目标"><a-input v-model="editingOutbound.stream.reality.settings.serverName"></a-input></a-form-model-item>
+                    <a-form-model-item label="公钥"><a-input v-model="editingOutbound.stream.reality.settings.publicKey"></a-input></a-form-model-item>
+                    <a-form-model-item label="指纹"><a-input v-model="editingOutbound.stream.reality.settings.fingerprint"></a-input></a-form-model-item>
+                    <a-form-model-item label="SpiderX"><a-input v-model="editingOutbound.stream.reality.settings.spiderX"></a-input></a-form-model-item>
+                </template>
+            </a-form-model>
+        </a-tab-pane>
+        <a-tab-pane key="socket" tab="Sockopt / Mux">
+            <a-form-model :label-col="{span: 7}" :wrapper-col="{span: 15}">
+                <a-form-model-item label="TCP Fast Open"><a-switch v-model="editingOutbound.sockopt.tcpFastOpen"></a-switch></a-form-model-item>
+                <a-form-model-item label="Mark"><a-input-number v-model.number="editingOutbound.sockopt.mark" :min="0"></a-input-number></a-form-model-item>
+                <a-form-model-item label="接口"><a-input v-model.trim="editingOutbound.sockopt.interface"></a-input></a-form-model-item>
+                <a-form-model-item label="域名策略"><a-input v-model.trim="editingOutbound.sockopt.domainStrategy"></a-input></a-form-model-item>
+                <a-form-model-item label="启用 Mux" v-if="editingOutbound.canEnableMux()"><a-switch v-model="editingOutbound.mux.enabled"></a-switch></a-form-model-item>
+                <template v-if="editingOutbound.canEnableMux() && editingOutbound.mux.enabled"><a-form-model-item label="并发数"><a-input-number v-model.number="editingOutbound.mux.concurrency" :min="1"></a-input-number></a-form-model-item><a-form-model-item label="XUDP 并发"><a-input-number v-model.number="editingOutbound.mux.xudpConcurrency" :min="1"></a-input-number></a-form-model-item><a-form-model-item label="UDP 443"><a-select v-model="editingOutbound.mux.xudpProxyUDP443"><a-select-option value="reject">reject</a-select-option><a-select-option value="allow">allow</a-select-option><a-select-option value="skip">skip</a-select-option></a-select></a-form-model-item></template>
+            </a-form-model>
+        </a-tab-pane>
+        <a-tab-pane key="json" tab="JSON 高级编辑">
+            <a-alert type="warning" show-icon message="高级编辑会替换当前这一个出站。未知的 Xray 字段会被保留；请只填一个 JSON 对象。"></a-alert>
+            <a-textarea v-model="editingOutboundJson" :auto-size="{minRows: 18, maxRows: 28}" style="margin-top: 12px"></a-textarea>
+            <a-button style="margin-top: 12px" @click="applyOutboundJson">应用 JSON</a-button>
+        </a-tab-pane>
+    </a-tabs>
+</a-modal>
+
+<a-modal :visible="warpModal.visible" :width="720" :mask-closable="false"
+         title="Cloudflare WARP" :footer="null" @cancel="closeWarpModal">
+    <a-spin :spinning="warpModal.loading">
+        <a-space direction="vertical" style="width: 100%">
+            <a-alert type="info" show-icon
+                     message="WARP 会生成 Xray WireGuard 出站，不会增加新的协议。写入后仍需点击页面顶部“保存配置”。"></a-alert>
+            <template v-if="!warpModal.data">
+                <a-empty description="尚未注册 WARP 账户"></a-empty>
+                <a-button type="primary" icon="plus" @click="registerWarp">创建 WARP 账户</a-button>
+            </template>
+            <template v-else>
+                <a-descriptions bordered size="small" :column="1">
+                    <a-descriptions-item label="设备">[[ warpDeviceSummary ]]</a-descriptions-item>
+                    <a-descriptions-item label="账户">[[ warpModal.data.license_key ? '已注册' : '未知' ]]</a-descriptions-item>
+                    <a-descriptions-item label="出站">[[ warpOutboundIndex >= 0 ? '已写入当前模版' : '尚未写入当前模版' ]]</a-descriptions-item>
+                </a-descriptions>
+                <a-space wrap>
+                    <a-button @click="fetchWarpConfig">获取配置</a-button>
+                    <a-button @click="changeWarpIP">更换 WARP IP</a-button>
+                    <a-button type="primary" :disabled="!warpModal.staged" @click="applyWarpOutbound">[[ warpOutboundIndex >= 0 ? '更新 WARP 出站' : '写入 WARP 出站' ]]</a-button>
+                </a-space>
+                <a-form-model :label-col="{span: 7}" :wrapper-col="{span: 15}">
+                    <a-form-model-item label="WARP+ License">
+                        <a-input-password v-model.trim="warpModal.license" placeholder="至少 26 个字符"></a-input-password>
+                        <a-button style="margin-top: 8px" :disabled="warpModal.license.length < 26" @click="setWarpLicense">应用 License</a-button>
+                    </a-form-model-item>
+                    <a-form-model-item label="自动换 IP（天）">
+                        <a-input-number v-model.number="warpModal.updateInterval" :min="0"></a-input-number>
+                        <a-button style="margin-left: 8px" @click="setWarpInterval">保存周期</a-button>
+                        <div style="color: rgba(0,0,0,.45)">0 表示关闭；任务每小时检查一次是否到期。</div>
+                    </a-form-model-item>
+                </a-form-model>
+                <a-popconfirm title="删除 WARP 账户并从当前模版移除 WARP 出站？" ok-text="删除" cancel-text="取消" @confirm="deleteWarp">
+                    <a-button type="danger">删除 WARP</a-button>
+                </a-popconfirm>
+            </template>
+        </a-space>
+    </a-spin>
+</a-modal>
 </a-layout>
 {{template "js" .}}
 {{template "component/setting"}}
@@ -104,6 +314,62 @@
             allSetting: new AllSetting(),
             saveBtnDisable: true,
             user: {},
+            outboundItems: [],
+            outboundTemplateError: '',
+            outboundProtocols: OutboundProtocolValues,
+            outboundModal: {visible: false, index: -1, tab: 'basic'},
+            editingOutbound: null,
+            editingOutboundJson: '',
+            warpModal: {visible: false, loading: false, data: null, config: null, staged: null, license: '', updateInterval: 0},
+        },
+        computed: {
+            editingOutboundTestseed: {
+                get() {
+                    return this.editingOutbound && this.editingOutbound.settings.testseed
+                        ? this.editingOutbound.settings.testseed.join(',') : '';
+                },
+                set(value) {
+                    if (this.editingOutbound) {
+                        this.editingOutbound.settings.testseed = String(value || '').split(',')
+                            .map(item => Number(item.trim()))
+                            .filter(item => Number.isInteger(item) && item > 0);
+                    }
+                },
+            },
+            editingHttpHeaders: {
+                get() { return this.editingOutbound ? JSON.stringify(this.editingOutbound.settings.headers || {}, null, 2) : '{}'; },
+                set(value) { this.setEditingJsonField('headers', value, {}); },
+            },
+            editingWireguardPeers: {
+                get() { return this.editingOutbound ? JSON.stringify(this.editingOutbound.settings.peers || [], null, 2) : '[]'; },
+                set(value) { this.setEditingJsonField('peers', value, []); },
+            },
+            editingDnsRules: {
+                get() { return this.editingOutbound ? JSON.stringify(this.editingOutbound.settings.rules || [], null, 2) : '[]'; },
+                set(value) { this.setEditingJsonField('rules', value, []); },
+            },
+            editingTlsAlpn: {
+                get() { return this.editingOutbound && this.editingOutbound.stream ? (this.editingOutbound.stream.tls.alpn || []).join(',') : ''; },
+                set(value) {
+                    if (this.editingOutbound && this.editingOutbound.stream) {
+                        this.editingOutbound.stream.tls.alpn = String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+                    }
+                },
+            },
+            wireguardPublicKey() {
+                if (!this.editingOutbound || this.editingOutbound.protocol !== 'wireguard') return '';
+                const key = this.editingOutbound.settings.secretKey;
+                if (!key || typeof Wireguard === 'undefined') return '';
+                try { return Wireguard.generateKeypair(key).publicKey; } catch (_) { return ''; }
+            },
+            warpOutboundIndex() {
+                return this.outboundItems.findIndex(outbound => outbound && outbound.tag === 'warp');
+            },
+            warpDeviceSummary() {
+                const id = this.warpModal.data && this.warpModal.data.device_id;
+                if (!id) return '未知';
+                return id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-6)}` : id;
+            },
         },
         methods: {
             loading(spinning = true) {
@@ -116,8 +382,242 @@
                 if (msg.success) {
                     this.oldAllSetting = new AllSetting(msg.obj);
                     this.allSetting = new AllSetting(msg.obj);
+                    this.loadOutboundItems();
                     this.saveBtnDisable = true;
                 }
+            },
+            isRemoteOutbound(protocol) {
+                return ['vmess', 'vless', 'trojan', 'shadowsocks', 'socks', 'http', 'hysteria'].includes(protocol);
+            },
+            parseOutboundTemplate() {
+                const text = String(this.allSetting.xrayTemplateConfig || '').trim();
+                if (!text) throw new Error('Xray 配置模版为空，无法编辑出站。');
+                let template;
+                try { template = JSON.parse(text); } catch (_) { throw new Error('Xray 配置模版不是有效 JSON，请先在“xray 相关设置”中修正。'); }
+                if (!template || typeof template !== 'object' || Array.isArray(template)) throw new Error('Xray 配置模版必须是 JSON 对象。');
+                if (!Array.isArray(template.outbounds)) throw new Error('Xray 配置模版中缺少 outbounds 数组，未做任何修改。');
+                return template;
+            },
+            loadOutboundItems() {
+                try {
+                    const template = this.parseOutboundTemplate();
+                    this.outboundItems = template.outbounds.map(item => JSON.parse(JSON.stringify(item)));
+                    this.outboundTemplateError = '';
+                } catch (error) {
+                    this.outboundItems = [];
+                    this.outboundTemplateError = error.message;
+                }
+            },
+            writeOutboundItems() {
+                let template;
+                try { template = this.parseOutboundTemplate(); } catch (error) { this.outboundTemplateError = error.message; this.$message.error(error.message); return false; }
+                template.outbounds = this.outboundItems.map(item => JSON.parse(JSON.stringify(item)));
+                this.allSetting.xrayTemplateConfig = JSON.stringify(template, null, 2);
+                this.outboundTemplateError = '';
+                return true;
+            },
+            ensureEditingStream() {
+                if (!this.editingOutbound || !this.editingOutbound.canEnableStream()) return;
+                if (!this.editingOutbound.stream) this.editingOutbound.stream = new StreamSettings();
+                if (this.editingOutbound.protocol === 'hysteria') this.editingOutbound.ensureHysteriaStream();
+            },
+            addOutbound() {
+                try { this.parseOutboundTemplate(); } catch (error) { this.outboundTemplateError = error.message; this.$message.error(error.message); return; }
+                this.outboundModal = {visible: true, index: -1, tab: 'basic'};
+                this.editingOutbound = new Outbound();
+                this.ensureEditingStream();
+                this.editingOutboundJson = this.editingOutbound.toString();
+            },
+            editOutbound(index) {
+                const raw = this.outboundItems[index];
+                if (!raw || !OutboundProtocolValues.includes(raw.protocol)) {
+                    this.$message.error('该出站协议不在当前 Xray 出站编辑器支持范围内；请使用 JSON 模版直接维护。');
+                    return;
+                }
+                this.outboundModal = {visible: true, index: index, tab: 'basic'};
+                this.editingOutbound = Outbound.fromJson(JSON.parse(JSON.stringify(raw)));
+                this.ensureEditingStream();
+                this.editingOutboundJson = this.editingOutbound.toString();
+            },
+            closeOutboundModal() {
+                this.outboundModal.visible = false;
+                this.editingOutbound = null;
+                this.editingOutboundJson = '';
+            },
+            changeOutboundProtocol(protocol) {
+                const previous = this.editingOutbound;
+                const next = new Outbound(protocol);
+                next.tag = previous.tag;
+                next.sendThrough = previous.sendThrough;
+                next.targetStrategy = previous.targetStrategy;
+                this.editingOutbound = next;
+                this.ensureEditingStream();
+                this.editingOutboundJson = next.toString();
+            },
+            setEditingJsonField(field, text, fallback) {
+                if (!this.editingOutbound) return;
+                try {
+                    const value = JSON.parse(text || JSON.stringify(fallback));
+                    if ((Array.isArray(fallback) && !Array.isArray(value)) || (!Array.isArray(fallback) && (!value || typeof value !== 'object' || Array.isArray(value)))) throw new Error();
+                    this.editingOutbound.settings[field] = value;
+                } catch (_) {
+                    // Keep the last valid value while a JSON textarea is being typed.
+                }
+            },
+            generateWireguardKey() {
+                if (!this.editingOutbound || typeof Wireguard === 'undefined') return;
+                const keypair = Wireguard.generateKeypair();
+                this.editingOutbound.settings.secretKey = keypair.privateKey;
+                this.editingOutbound.settings.pubKey = keypair.publicKey;
+            },
+            parseWarpObject(value) {
+                if (!value) return null;
+                if (typeof value === 'object') return value;
+                try { return JSON.parse(value); } catch (_) { return null; }
+            },
+            async openWarpModal() {
+                this.warpModal.visible = true;
+                this.warpModal.updateInterval = Number(this.allSetting.warpUpdateInterval) || 0;
+                await this.loadWarpData();
+            },
+            closeWarpModal() {
+                this.warpModal.visible = false;
+                this.warpModal.license = '';
+            },
+            async loadWarpData() {
+                this.warpModal.loading = true;
+                const msg = await HttpUtil.post('/xui/setting/warp/data');
+                this.warpModal.loading = false;
+                if (!msg.success) return;
+                this.warpModal.data = this.parseWarpObject(msg.obj);
+                this.warpModal.config = null;
+                this.warpModal.staged = null;
+                if (this.warpModal.data) await this.fetchWarpConfig();
+            },
+            stageWarpOutbound() {
+                if (!this.warpModal.data || !this.warpModal.config) return;
+                const existing = this.warpOutboundIndex >= 0 ? this.outboundItems[this.warpOutboundIndex] : {};
+                this.warpModal.staged = buildWarpOutbound(existing, this.warpModal.data, this.warpModal.config);
+                if (!this.warpModal.staged) this.$message.error('Cloudflare 返回的 WARP 配置缺少 peer 或密钥。');
+            },
+            async registerWarp() {
+                if (typeof Wireguard === 'undefined') return;
+                const keypair = Wireguard.generateKeypair();
+                this.warpModal.loading = true;
+                const msg = await HttpUtil.post('/xui/setting/warp/reg', keypair);
+                this.warpModal.loading = false;
+                if (!msg.success) return;
+                const result = this.parseWarpObject(msg.obj);
+                if (!result || !result.data || !result.config) { this.$message.error('WARP 注册响应无效。'); return; }
+                this.warpModal.data = result.data;
+                this.warpModal.config = result.config;
+                this.stageWarpOutbound();
+            },
+            async fetchWarpConfig() {
+                this.warpModal.loading = true;
+                const msg = await HttpUtil.post('/xui/setting/warp/config');
+                this.warpModal.loading = false;
+                if (!msg.success) return;
+                this.warpModal.config = this.parseWarpObject(msg.obj);
+                this.stageWarpOutbound();
+            },
+            applyWarpOutbound(showMessage=true) {
+                if (!this.warpModal.staged) { this.$message.warning('请先注册并获取 WARP 配置。'); return false; }
+                const outbound = JSON.parse(JSON.stringify(this.warpModal.staged));
+                const index = this.warpOutboundIndex;
+                if (index >= 0) this.outboundItems.splice(index, 1, outbound);
+                else this.outboundItems.push(outbound);
+                if (!this.writeOutboundItems()) return false;
+                this.warpModal.staged = null;
+                if (showMessage) this.$message.success('WARP 出站已写入当前模版，请点击顶部保存配置。');
+                return true;
+            },
+            async changeWarpIP() {
+                if (this.warpOutboundIndex < 0) { this.$message.warning('请先写入并保存 WARP 出站。'); return; }
+                this.warpModal.loading = true;
+                const msg = await HttpUtil.post('/xui/setting/warp/changeIp');
+                this.warpModal.loading = false;
+                if (!msg.success) return;
+                const result = this.parseWarpObject(msg.obj);
+                if (!result || !result.data || !result.config) { this.$message.error('WARP 换 IP 响应无效。'); return; }
+                this.warpModal.data = result.data;
+                this.warpModal.config = result.config;
+                this.stageWarpOutbound();
+                this.applyWarpOutbound(false);
+                this.$message.success('WARP IP 已更换，当前模版已同步。');
+            },
+            async setWarpLicense() {
+                if (this.warpModal.license.length < 26) { this.$message.error('WARP+ License 至少需要 26 个字符。'); return; }
+                this.warpModal.loading = true;
+                const msg = await HttpUtil.post('/xui/setting/warp/license', {license: this.warpModal.license});
+                this.warpModal.loading = false;
+                if (!msg.success) return;
+                this.warpModal.data = this.parseWarpObject(msg.obj);
+                this.warpModal.config = null;
+                this.warpModal.staged = null;
+                this.warpModal.license = '';
+                await this.fetchWarpConfig();
+            },
+            async setWarpInterval() {
+                const interval = Number(this.warpModal.updateInterval);
+                if (!Number.isInteger(interval) || interval < 0) { this.$message.error('自动换 IP 周期必须是非负整数。'); return; }
+                const msg = await HttpUtil.post('/xui/setting/warp/interval', {interval});
+                if (msg.success) {
+                    this.allSetting.warpUpdateInterval = interval;
+                    this.warpModal.updateInterval = interval;
+                }
+            },
+            async deleteWarp() {
+                this.warpModal.loading = true;
+                const msg = await HttpUtil.post('/xui/setting/warp/del');
+                this.warpModal.loading = false;
+                if (!msg.success) return;
+                const index = this.warpOutboundIndex;
+                if (index >= 0) {
+                    this.outboundItems.splice(index, 1);
+                    this.writeOutboundItems();
+                }
+                this.warpModal.data = null;
+                this.warpModal.config = null;
+                this.warpModal.staged = null;
+                this.warpModal.updateInterval = 0;
+                this.allSetting.warpUpdateInterval = 0;
+                this.warpModal.visible = false;
+                this.$message.success('WARP 已删除；如移除了出站，请点击顶部保存配置。');
+            },
+            applyOutboundJson() {
+                let raw;
+                try { raw = JSON.parse(this.editingOutboundJson); } catch (_) { this.$message.error('出站 JSON 无效。'); return; }
+                if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !OutboundProtocolValues.includes(raw.protocol)) {
+                    this.$message.error('JSON 必须是包含受支持 protocol 的出站对象。'); return;
+                }
+                this.editingOutbound = Outbound.fromJson(raw);
+                this.ensureEditingStream();
+                this.editingOutboundJson = this.editingOutbound.toString();
+                this.$message.success('已应用 JSON。');
+            },
+            saveOutbound() {
+                if (!this.editingOutbound) return;
+                if (!this.isRemoteOutbound(this.editingOutbound.protocol) && this.editingOutbound.protocol !== 'wireguard' && this.editingOutbound.protocol !== 'freedom' && this.editingOutbound.protocol !== 'blackhole' && this.editingOutbound.protocol !== 'dns' && this.editingOutbound.protocol !== 'loopback') {
+                    this.$message.error('不支持的出站协议。'); return;
+                }
+                if (this.editingOutbound.protocol === 'hysteria') this.editingOutbound.ensureHysteriaStream();
+                const wire = this.editingOutbound.toJson();
+                if (this.outboundModal.index < 0) this.outboundItems.push(wire);
+                else this.outboundItems.splice(this.outboundModal.index, 1, wire);
+                if (!this.writeOutboundItems()) return;
+                this.closeOutboundModal();
+            },
+            moveOutbound(index, delta) {
+                const target = index + delta;
+                if (target < 0 || target >= this.outboundItems.length) return;
+                const moved = this.outboundItems.splice(index, 1)[0];
+                this.outboundItems.splice(target, 0, moved);
+                this.writeOutboundItems();
+            },
+            removeOutbound(index) {
+                this.outboundItems.splice(index, 1);
+                this.writeOutboundItems();
             },
             async updateAllSetting() {
                 this.loading(true);

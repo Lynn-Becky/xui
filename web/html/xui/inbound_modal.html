@@ -47,9 +47,11 @@
         VLESS: Protocols.VLESS,
         TROJAN: Protocols.TROJAN,
         SHADOWSOCKS: Protocols.SHADOWSOCKS,
-        DOKODEMO: Protocols.DOKODEMO,
-        SOCKS: Protocols.SOCKS,
         HTTP: Protocols.HTTP,
+        MIXED: Protocols.MIXED,
+        TUNNEL: Protocols.TUNNEL,
+        WIREGUARD: Protocols.WIREGUARD,
+        HYSTERIA: Protocols.HYSTERIA,
     };
 
     new Vue({
@@ -64,11 +66,70 @@
             },
             get dbInbound() {
                 return inModal.dbInbound;
-            }
+            },
+            vlessEncryptionAuth: 'x25519',
+            vlessEncryptionAuths: [
+                {id: 'x25519', label: 'X25519 (native)'},
+                {id: 'x25519_xorpub', label: 'X25519 (xorpub)'},
+                {id: 'x25519_random', label: 'X25519 (random)'},
+                {id: 'mlkem768', label: 'ML-KEM-768 (native)'},
+                {id: 'mlkem768_xorpub', label: 'ML-KEM-768 (xorpub)'},
+                {id: 'mlkem768_random', label: 'ML-KEM-768 (random)'},
+            ],
         },
         methods: {
+            async generateVlessEncryption() {
+                const msg = await HttpUtil.post('/server/getNewVlessEnc');
+                if (!msg.success || !msg.obj || !Array.isArray(msg.obj.auths)) return;
+                const auth = msg.obj.auths.find(item => item.id === this.vlessEncryptionAuth) || msg.obj.auths[0];
+                if (auth) {
+                    this.inbound.settings.decryption = auth.decryption;
+                    this.inbound.settings.encryption = auth.encryption;
+                }
+            },
+            clearVlessEncryption() {
+                this.inbound.settings.decryption = 'none';
+                this.inbound.settings.encryption = 'none';
+            },
+            async generateRealityKeyPair() {
+                const msg = await HttpUtil.post('/server/getNewX25519Cert');
+                if (msg.success) {
+                    this.inbound.stream.reality.privateKey = msg.obj.privateKey;
+                    this.inbound.stream.reality.settings.publicKey = msg.obj.publicKey;
+                }
+            },
+            async generateMldsa65() {
+                const msg = await HttpUtil.post('/server/getNewMldsa65');
+                if (msg.success) {
+                    this.inbound.stream.reality.mldsa65Seed = msg.obj.seed;
+                    this.inbound.stream.reality.settings.mldsa65Verify = msg.obj.verify;
+                }
+            },
+            regenerateWireguardServerKey() {
+                this.inbound.settings.secretKey = Wireguard.generateKeypair().privateKey;
+            },
+            wireguardClientPrivateKeyChanged(client) {
+                if (!client.privateKey) {
+                    client.publicKey = '';
+                    return;
+                }
+                try {
+                    client.publicKey = Wireguard.generateKeypair(client.privateKey).publicKey;
+                } catch (_) {
+                    client.publicKey = '';
+                }
+            },
+            regenerateWireguardClientKey(client) {
+                const keypair = Wireguard.generateKeypair();
+                client.privateKey = keypair.privateKey;
+                client.publicKey = keypair.publicKey;
+            },
             streamNetworkChange(oldValue) {
-                if (oldValue === 'kcp') {
+                if (this.inbound.stream.isReality && !this.inbound.canEnableReality()) {
+                    this.inbound.stream.security = 'none';
+                } else if (this.inbound.stream.isTls && !this.inbound.canEnableTls()) {
+                    this.inbound.stream.security = 'none';
+                } else if (this.inbound.stream.isXTls && !this.inbound.canEnableXTls()) {
                     this.inModal.inbound.tls = false;
                 }
             }

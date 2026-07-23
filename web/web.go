@@ -103,6 +103,31 @@ func NewServer() *Server {
 	}
 }
 
+// directTLSConfig returns the configuration used by the panel's own listener.
+// A certificate without its private key (or vice versa) is not a valid HTTPS
+// setup and is rejected instead of silently starting the panel as HTTP.
+func (s *Server) directTLSConfig() (*tls.Config, error) {
+	certFile, err := s.settingService.GetCertFile()
+	if err != nil {
+		return nil, err
+	}
+	keyFile, err := s.settingService.GetKeyFile()
+	if err != nil {
+		return nil, err
+	}
+	if (certFile == "") != (keyFile == "") {
+		return nil, common.NewError("both web certificate and key files must be configured together")
+	}
+	if certFile == "" {
+		return nil, nil
+	}
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
+}
+
 func (s *Server) getHtmlFiles() ([]string, error) {
 	files := make([]string, 0)
 	dir, _ := os.Getwd()
@@ -130,10 +155,16 @@ func (s *Server) getHtmlTemplate(funcMap template.FuncMap) (*template.Template, 
 		}
 
 		if d.IsDir() {
-			newT, err := t.ParseFS(htmlFS, path+"/*.html")
+			matches, err := fs.Glob(htmlFS, path+"/*.html")
 			if err != nil {
-				// ignore
+				return err
+			}
+			if len(matches) == 0 {
 				return nil
+			}
+			newT, err := t.ParseFS(htmlFS, matches...)
+			if err != nil {
+				return err
 			}
 			t = newT
 		}
@@ -155,6 +186,11 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 
 	engine := gin.Default()
+	tlsConfig, err := s.directTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	directHTTPS := tlsConfig != nil
 
 	secret, err := s.settingService.GetSecret()
 	if err != nil {
@@ -168,9 +204,16 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	assetsBasePath := basePath + "assets/"
 
 	store := cookie.NewStore(secret)
+	store.Options(sessions.Options{
+		Path:     basePath,
+		HttpOnly: true,
+		Secure:   directHTTPS,
+		SameSite: http.SameSiteLaxMode,
+	})
 	engine.Use(sessions.Sessions("session", store))
 	engine.Use(func(c *gin.Context) {
 		c.Set("base_path", basePath)
+		c.Set("direct_https", directHTTPS)
 	})
 	engine.Use(func(c *gin.Context) {
 		uri := c.Request.RequestURI
@@ -295,6 +338,9 @@ func (s *Server) startTask() {
 
 	// 每 30 秒检查一次 inbound 流量超出和到期的情况
 	s.cron.AddJob("@every 30s", job.NewCheckInboundJob())
+	// WARP rotation interval is expressed in days; the hourly job performs the
+	// due-time check and leaves disabled/unregistered installations untouched.
+	s.cron.AddJob("@hourly", job.NewWarpIPJob())
 	// 每一天提示一次流量情况,上海时间8点30
 	var entry cron.EntryID
 	isTgbotenabled, err := s.settingService.GetTgbotenabled()
@@ -330,19 +376,16 @@ func (s *Server) Start() (err error) {
 	s.cron = cron.New(cron.WithLocation(loc), cron.WithSeconds())
 	s.cron.Start()
 
+	tlsConfig, err := s.directTLSConfig()
+	if err != nil {
+		return err
+	}
+
 	engine, err := s.initRouter()
 	if err != nil {
 		return err
 	}
 
-	certFile, err := s.settingService.GetCertFile()
-	if err != nil {
-		return err
-	}
-	keyFile, err := s.settingService.GetKeyFile()
-	if err != nil {
-		return err
-	}
 	listen, err := s.settingService.GetListen()
 	if err != nil {
 		return err
@@ -356,20 +399,12 @@ func (s *Server) Start() (err error) {
 	if err != nil {
 		return err
 	}
-	if certFile != "" || keyFile != "" {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			listener.Close()
-			return err
-		}
-		c := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		}
+	if tlsConfig != nil {
 		listener = network.NewAutoHttpsListener(listener)
-		listener = tls.NewListener(listener, c)
+		listener = tls.NewListener(listener, tlsConfig)
 	}
 
-	if certFile != "" || keyFile != "" {
+	if tlsConfig != nil {
 		logger.Info("web server run https on", listener.Addr())
 	} else {
 		logger.Info("web server run http on", listener.Addr())

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 	"time"
 	"x-ui/database"
 	"x-ui/database/model"
@@ -33,6 +32,9 @@ var defaultValueMap = map[string]string{
 	"tgBotToken":         "",
 	"tgBotChatId":        "0",
 	"tgRunTime":          "",
+	"warp":               "",
+	"warpUpdateInterval": "0",
+	"warpLastUpdate":     "0",
 }
 
 type SettingService struct {
@@ -190,6 +192,41 @@ func (s *SettingService) GetXrayConfigTemplate() (string, error) {
 	return s.getString("xrayTemplateConfig")
 }
 
+func (s *SettingService) SetXrayConfigTemplate(value string) error {
+	return s.setString("xrayTemplateConfig", value)
+}
+
+func (s *SettingService) GetWarp() (string, error) {
+	return s.getString("warp")
+}
+
+func (s *SettingService) SetWarp(value string) error {
+	return s.setString("warp", value)
+}
+
+func (s *SettingService) GetWarpUpdateInterval() (int, error) {
+	return s.getInt("warpUpdateInterval")
+}
+
+func (s *SettingService) SetWarpUpdateInterval(value int) error {
+	if value < 0 {
+		return common.NewError("warp update interval must not be negative")
+	}
+	return s.setInt("warpUpdateInterval", value)
+}
+
+func (s *SettingService) GetWarpLastUpdate() (int64, error) {
+	value, err := s.getString("warpLastUpdate")
+	if err != nil || value == "" {
+		return 0, err
+	}
+	return strconv.ParseInt(value, 10, 64)
+}
+
+func (s *SettingService) SetWarpLastUpdate(value int64) error {
+	return s.setString("warpLastUpdate", strconv.FormatInt(value, 10))
+}
+
 func (s *SettingService) GetListen() (string, error) {
 	return s.getString("webListen")
 }
@@ -238,8 +275,16 @@ func (s *SettingService) GetCertFile() (string, error) {
 	return s.getString("webCertFile")
 }
 
+func (s *SettingService) SetCertFile(value string) error {
+	return s.setString("webCertFile", value)
+}
+
 func (s *SettingService) GetKeyFile() (string, error) {
 	return s.getString("webKeyFile")
+}
+
+func (s *SettingService) SetKeyFile(value string) error {
+	return s.setString("webKeyFile", value)
 }
 
 func (s *SettingService) GetSecret() ([]byte, error) {
@@ -258,13 +303,15 @@ func (s *SettingService) GetBasePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !strings.HasPrefix(basePath, "/") {
-		basePath = "/" + basePath
+	return entity.NormalizeBasePath(basePath)
+}
+
+func (s *SettingService) SetBasePath(basePath string) error {
+	basePath, err := entity.NormalizeBasePath(basePath)
+	if err != nil {
+		return err
 	}
-	if !strings.HasSuffix(basePath, "/") {
-		basePath += "/"
-	}
-	return basePath, nil
+	return s.setString("webBasePath", basePath)
 }
 
 func (s *SettingService) GetTimeLocation() (*time.Location, error) {

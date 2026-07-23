@@ -1,0 +1,39 @@
+{{define "form/wireguard"}}
+<a-form layout="inline">
+    <a-form-item label="服务器私钥">
+        <a-input v-model.trim="inbound.settings.secretKey" style="min-width: 360px">
+            <template slot="addonAfter"><a-button icon="reload" @click="regenerateWireguardServerKey"></a-button></template>
+        </a-input>
+    </a-form-item>
+    <a-form-item label="服务器公钥"><a-input :value="inbound.settings.publicKey" disabled style="min-width: 360px"></a-input></a-form-item>
+    <a-form-item label="MTU"><a-input-number v-model.number="inbound.settings.mtu" :min="1"></a-input-number></a-form-item>
+    <a-form-item label="DNS"><a-input v-model.trim="inbound.settings.dns" placeholder="1.1.1.1, 1.0.0.1"></a-input></a-form-item>
+    <a-form-item label="noKernelTun"><a-switch v-model="inbound.settings.noKernelTun"></a-switch></a-form-item>
+    <a-form-item label="domainStrategy">
+        <a-select v-model="inbound.settings.domainStrategy" allow-clear style="width: 140px">
+            <a-select-option value="ForceIP">ForceIP</a-select-option>
+            <a-select-option value="ForceIPv4">ForceIPv4</a-select-option>
+            <a-select-option value="ForceIPv4v6">ForceIPv4v6</a-select-option>
+            <a-select-option value="ForceIPv6">ForceIPv6</a-select-option>
+            <a-select-option value="ForceIPv6v4">ForceIPv6v4</a-select-option>
+        </a-select>
+    </a-form-item>
+</a-form>
+<a-card size="small" title="客户端" v-for="(client, index) in inbound.settings.clients" :key="index" style="margin-top: 8px">
+    <a-form layout="inline">
+        <a-form-item label="email"><a-input v-model.trim="client.email"></a-input></a-form-item>
+        <a-form-item label="启用"><a-switch v-model="client.enable"></a-switch></a-form-item>
+        <a-form-item label="客户端私钥">
+            <a-input v-model.trim="client.privateKey" @change="wireguardClientPrivateKeyChanged(client)" style="min-width: 300px">
+                <template slot="addonAfter"><a-button icon="reload" @click="regenerateWireguardClientKey(client)"></a-button></template>
+            </a-input>
+        </a-form-item>
+        <a-form-item label="客户端公钥"><a-input :value="client.publicKey" disabled style="min-width: 300px"></a-input></a-form-item>
+        <a-form-item label="预共享密钥"><a-input v-model.trim="client.preSharedKey" style="min-width: 300px"></a-input></a-form-item>
+        <a-form-item label="Allowed IPs"><a-select mode="tags" v-model="client.allowedIPs" style="min-width: 260px"></a-select></a-form-item>
+        <a-form-item label="KeepAlive"><a-input-number v-model.number="client.keepAlive" :min="0"></a-input-number></a-form-item>
+        <a-form-item><a-button type="danger" size="small" @click="inbound.settings.delClient(index)">删除客户端</a-button></a-form-item>
+    </a-form>
+</a-card>
+<a-button size="small" style="margin-top: 8px" @click="inbound.settings.addClient()">添加客户端</a-button>
+{{end}}

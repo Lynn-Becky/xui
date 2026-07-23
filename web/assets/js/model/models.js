@@ -75,8 +75,16 @@ class DBInbound {
         return this.protocol === Protocols.SHADOWSOCKS;
     }
 
-    get isSocks() {
-        return this.protocol === Protocols.SOCKS;
+    get isMixed() {
+        return this.protocol === Protocols.MIXED;
+    }
+
+    get isHysteria() {
+        return this.protocol === Protocols.HYSTERIA;
+    }
+
+    get isWireGuard() {
+        return this.protocol === Protocols.WIREGUARD;
     }
 
     get isHTTP() {
@@ -144,14 +152,49 @@ class DBInbound {
             case Protocols.TROJAN:
             case Protocols.SHADOWSOCKS:
                 return true;
+            case Protocols.HYSTERIA:
+            case Protocols.WIREGUARD:
+                try {
+                    return this.shareEntries().length > 0 && !ObjectUtil.isEmpty(this.genLink(0));
+                } catch (_) {
+                    return false;
+                }
             default:
                 return false;
         }
     }
 
-    genLink() {
+    shareEntries() {
+        if (!this.isHysteria && !this.isWireGuard) return [];
+        try {
+            const inbound = this.toInbound();
+            const clients = this.isHysteria ? inbound.hysteriaClients() : inbound.wireguardClients();
+            return clients.map((client, index) => ({
+                index: index,
+                label: client.email || `客户端 ${index + 1}`,
+            }));
+        } catch (_) {
+            return [];
+        }
+    }
+
+    genLink(clientIndex=0) {
         const inbound = this.toInbound();
-        return inbound.genLink(this.address, this.remark);
+        const suffix = clientIndex > 0 ? `-${clientIndex + 1}` : '';
+        return inbound.genLink(this.address, `${this.remark}${suffix}`, clientIndex);
+    }
+
+    hasClientConfig() {
+        if (!this.isWireGuard) return false;
+        try {
+            return !ObjectUtil.isEmpty(this.genClientConfig());
+        } catch (_) {
+            return false;
+        }
+    }
+
+    genClientConfig(clientIndex=0) {
+        return this.toInbound().genWireguardConfig(this.address, clientIndex);
     }
 }
 
@@ -168,6 +211,7 @@ class AllSetting {
         this.tgBotChatId = 0;
         this.tgRunTime = "";
         this.xrayTemplateConfig = "";
+        this.warpUpdateInterval = 0;
 
         this.timeLocation = "Asia/Shanghai";
 

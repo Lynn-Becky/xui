@@ -1,175 +1,250 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -euo pipefail
 
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-cur_dir=$(pwd)
+XUI_FOLDER="${XUI_FOLDER:-/usr/local/x-ui}"
+XUI_REPO="${XUI_REPO:-Lynn-Becky/Alpine-x-ui}"
+XUI_SERVICE_DIR="${XUI_SERVICE_DIR:-/etc/systemd/system}"
+XUI_DB_FILE="${XUI_DB_FILE:-/etc/x-ui/x-ui.db}"
+existing_database=false
+[[ -f "$XUI_DB_FILE" ]] && existing_database=true
 
-# check root
-[[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
+script_dir=""
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+    script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+fi
 
-# check os
-if [[ -f /etc/redhat-release ]]; then
-    release="centos"
-elif cat /etc/issue | grep -Eqi "debian"; then
-    release="debian"
-elif cat /etc/issue | grep -Eqi "ubuntu"; then
-    release="ubuntu"
-elif cat /etc/issue | grep -Eqi "centos|red hat|redhat"; then
-    release="centos"
-elif cat /proc/version | grep -Eqi "debian"; then
-    release="debian"
-elif cat /proc/version | grep -Eqi "ubuntu"; then
-    release="ubuntu"
-elif cat /proc/version | grep -Eqi "centos|red hat|redhat"; then
-    release="centos"
+error() {
+    echo -e "${red}$*${plain}" >&2
+}
+
+[[ $EUID -eq 0 ]] || { error "错误：必须使用 root 用户运行此脚本！"; exit 1; }
+
+if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    source /etc/os-release
+    release="${ID,,}"
 else
-    echo -e "${red}未检测到系统版本，请联系脚本作者！${plain}\n" && exit 1
+    error "未检测到系统版本，请联系脚本作者！"
+    exit 1
 fi
 
-arch=$(arch)
+case "$release" in
+    alpine|debian|ubuntu|armbian|raspbian|centos|rhel|rocky|almalinux|ol|fedora|amzn|amazon|arch|manjaro|parch|opensuse-tumbleweed|opensuse-leap|sles)
+        ;;
+    *)
+        error "暂不支持的系统：${release}"
+        exit 1
+        ;;
+esac
 
-if [[ $arch == "x86_64" || $arch == "x64" || $arch == "amd64" ]]; then
-    arch="amd64"
-elif [[ $arch == "aarch64" || $arch == "arm64" ]]; then
-    arch="arm64"
-elif [[ $arch == "s390x" ]]; then
-    arch="s390x"
-else
-    arch="amd64"
-    echo -e "${red}检测架构失败，使用默认架构: ${arch}${plain}"
-fi
+arch() {
+    case "$(uname -m)" in
+        x86_64|x64|amd64) echo amd64 ;;
+        aarch64|arm64|armv8*) echo arm64 ;;
+        *) return 1 ;;
+    esac
+}
 
-echo "架构: ${arch}"
-
-if [ $(getconf WORD_BIT) != '32' ] && [ $(getconf LONG_BIT) != '64' ]; then
-    echo "本软件不支持 32 位系统(x86)，请使用 64 位系统(x86_64)，如果检测有误，请联系作者"
-    exit -1
-fi
-
-os_version=""
-
-# os version
-if [[ -f /etc/os-release ]]; then
-    os_version=$(awk -F'[= ."]' '/VERSION_ID/{print $3}' /etc/os-release)
-fi
-if [[ -z "$os_version" && -f /etc/lsb-release ]]; then
-    os_version=$(awk -F'[= ."]+' '/DISTRIB_RELEASE/{print $2}' /etc/lsb-release)
-fi
-
-if [[ x"${release}" == x"centos" ]]; then
-    if [[ ${os_version} -le 6 ]]; then
-        echo -e "${red}请使用 CentOS 7 或更高版本的系统！${plain}\n" && exit 1
-    fi
-elif [[ x"${release}" == x"ubuntu" ]]; then
-    if [[ ${os_version} -lt 16 ]]; then
-        echo -e "${red}请使用 Ubuntu 16 或更高版本的系统！${plain}\n" && exit 1
-    fi
-elif [[ x"${release}" == x"debian" ]]; then
-    if [[ ${os_version} -lt 8 ]]; then
-        echo -e "${red}请使用 Debian 8 或更高版本的系统！${plain}\n" && exit 1
-    fi
-fi
+arch="$(arch)" || { error "不支持的 CPU 架构：$(uname -m)"; exit 1; }
+echo "系统：${release}，架构：${arch}"
 
 install_base() {
-    if [[ x"${release}" == x"centos" ]]; then
-        yum install wget curl tar -y
+    case "$release" in
+        alpine)
+            apk add --no-cache bash dcron curl wget tar tzdata socat ca-certificates openssl openrc
+            apk add --no-cache gcompat >/dev/null 2>&1 || true
+            ;;
+        centos|rhel|rocky|almalinux|ol|fedora|amzn|amazon)
+            if command -v dnf >/dev/null 2>&1; then
+                dnf install -y cronie curl wget tar tzdata socat ca-certificates openssl
+            else
+                yum install -y cronie curl wget tar tzdata socat ca-certificates openssl
+            fi
+            ;;
+        arch|manjaro|parch)
+            pacman -Sy --noconfirm cronie curl wget tar tzdata socat ca-certificates openssl
+            ;;
+        opensuse-tumbleweed|opensuse-leap|sles)
+            zypper --non-interactive refresh
+            zypper --non-interactive install cron curl wget tar timezone socat ca-certificates openssl
+            ;;
+        debian|ubuntu|armbian|raspbian)
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y cron curl wget tar tzdata socat ca-certificates openssl
+            ;;
+        *)
+            error "无法为 ${release} 选择包管理器。"
+            exit 1
+            ;;
+    esac
+}
+
+service_stop() {
+    if [[ "$release" == alpine ]]; then
+        rc-service x-ui stop >/dev/null 2>&1 || true
     else
-        apt install wget curl tar -y
+        systemctl stop x-ui >/dev/null 2>&1 || true
     fi
 }
 
-#This function will be called when user installed x-ui out of sercurity
 config_after_install() {
-    echo -e "${yellow}出于安全考虑，安装/更新完成后需要强制修改端口与账户密码${plain}"
-    read -p "确认是否继续?[y/n]": config_confirm
-    if [[ x"${config_confirm}" == x"y" || x"${config_confirm}" == x"Y" ]]; then
-        read -p "请设置您的账户名:" config_account
-        echo -e "${yellow}您的账户名将设定为:${config_account}${plain}"
-        read -p "请设置您的账户密码:" config_password
-        echo -e "${yellow}您的账户密码将设定为:${config_password}${plain}"
-        read -p "请设置面板访问端口:" config_port
-        echo -e "${yellow}您的面板访问端口将设定为:${config_port}${plain}"
-        echo -e "${yellow}确认设定,设定中${plain}"
-        /usr/local/x-ui/x-ui setting -username ${config_account} -password ${config_password}
-        echo -e "${yellow}账户密码设定完成${plain}"
-        /usr/local/x-ui/x-ui setting -port ${config_port}
-        echo -e "${yellow}面板端口设定完成${plain}"
+    echo -e "${yellow}出于安全考虑，安装/更新完成后需要修改端口与账户密码。${plain}"
+    local config_web_base_path="${XUI_WEB_BASE_PATH:-}"
+    if [[ -z "$config_web_base_path" && ! -f "$XUI_DB_FILE" ]]; then
+        config_web_base_path="$(gen_random_string 18)"
+        echo -e "${green}已生成随机面板访问路径：/${config_web_base_path}/${plain}"
+    fi
+    if [[ -n "$config_web_base_path" ]]; then
+        "$XUI_FOLDER/x-ui" setting -webBasePath "$config_web_base_path"
+        config_web_base_path="${config_web_base_path#/}"
+        config_web_base_path="${config_web_base_path%/}"
+        echo -e "${green}面板访问路径：/${config_web_base_path}/${plain}"
+    fi
+
+    if [[ "${XUI_NONINTERACTIVE:-0}" == 1 || ! -t 0 ]]; then
+        if [[ -n "${XUI_USERNAME:-}" && -n "${XUI_PASSWORD:-}" ]]; then
+            "$XUI_FOLDER/x-ui" setting -username "$XUI_USERNAME" -password "$XUI_PASSWORD"
+        fi
+        if [[ "${XUI_PORT:-}" =~ ^[0-9]+$ ]] && (( XUI_PORT >= 1 && XUI_PORT <= 65535 )); then
+            "$XUI_FOLDER/x-ui" setting -port "$XUI_PORT"
+        fi
+        echo -e "${yellow}非交互安装已跳过未通过环境变量提供的配置项。${plain}"
+        return
+    fi
+
+    read -r -p "确认是否继续？[y/n] " config_confirm
+    if [[ "$config_confirm" =~ ^[yY]$ ]]; then
+        read -r -p "请设置您的账户名: " config_account
+        read -r -p "请设置您的账户密码: " config_password
+        read -r -p "请设置面板访问端口: " config_port
+        if [[ -n "$config_account" && -n "$config_password" ]]; then
+            "$XUI_FOLDER/x-ui" setting -username "$config_account" -password "$config_password"
+        fi
+        if [[ "$config_port" =~ ^[0-9]+$ ]] && (( config_port >= 1 && config_port <= 65535 )); then
+            "$XUI_FOLDER/x-ui" setting -port "$config_port"
+        fi
     else
-        echo -e "${red}已取消,所有设置项均为默认设置,请及时修改${plain}"
+        echo -e "${yellow}已取消，仍为默认设置，请及时修改。${plain}"
     fi
 }
 
-install_x-ui() {
-    systemctl stop x-ui
-    cd /usr/local/
+gen_random_string() {
+    local length="$1"
+    openssl rand -base64 $((length * 2)) | tr -dc 'a-zA-Z0-9' | cut -c "1-${length}"
+}
 
-    if [ $# == 0 ]; then
-        last_version=$(curl -Ls "https://api.github.com/repos/vaxilu/x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        if [[ ! -n "$last_version" ]]; then
-            echo -e "${red}检测 x-ui 版本失败，可能是超出 Github API 限制，请稍后再试，或手动指定 x-ui 版本安装${plain}"
-            exit 1
-        fi
-        echo -e "检测到 x-ui 最新版本：${last_version}，开始安装"
-        wget -N --no-check-certificate -O /usr/local/x-ui-linux-${arch}.tar.gz https://github.com/vaxilu/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 x-ui 失败，请确保你的服务器能够下载 Github 的文件${plain}"
-            exit 1
-        fi
+tag_version=""
+
+download_release() {
+    local version="$1"
+    local archive="${XUI_FOLDER}-linux-${arch}.tar.gz"
+    local url
+    if [[ -n "$version" ]]; then
+        url="https://github.com/${XUI_REPO}/releases/download/${version}/x-ui-linux-${arch}.tar.gz"
+        echo "开始安装 x-ui ${version}"
     else
-        last_version=$1
-        url="https://github.com/vaxilu/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz"
-        echo -e "开始安装 x-ui v$1"
-        wget -N --no-check-certificate -O /usr/local/x-ui-linux-${arch}.tar.gz ${url}
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 x-ui v$1 失败，请确保此版本存在${plain}"
-            exit 1
-        fi
+        # The repository also publishes prereleases, which /releases/latest
+        # deliberately excludes. The first visible release is the newest one.
+        version="$(curl -fsSL --retry 3 "https://api.github.com/repos/${XUI_REPO}/releases?per_page=1" \
+            | sed -n 's/.*\"tag_name\": \"\([^\"]*\)\".*/\1/p' | head -n 1 || true)"
+        [[ -n "$version" ]] || { error "检测 x-ui 最新版本失败，请稍后重试或手动指定版本。"; exit 1; }
+        url="https://github.com/${XUI_REPO}/releases/download/${version}/x-ui-linux-${arch}.tar.gz"
+        echo "检测到 x-ui 最新版本：${version}，开始安装"
     fi
+    curl -fL --retry 3 --connect-timeout 15 -o "$archive" "$url" || {
+        rm -f "$archive"
+        error "下载 x-ui 失败，请确保版本存在且服务器可以访问 GitHub。"
+        exit 1
+    }
+    [[ -s "$archive" ]] || { rm -f "$archive"; error "下载的安装包为空。"; exit 1; }
+    tag_version="$version"
+}
 
-    if [[ -e /usr/local/x-ui/ ]]; then
-        rm /usr/local/x-ui/ -rf
+install_openrc_service() {
+    local service_url="https://raw.githubusercontent.com/${XUI_REPO}/x-ui/x-ui.rc"
+    local temp="/etc/init.d/x-ui.tmp.$$"
+    if [[ -n "$script_dir" && -f "$script_dir/x-ui.rc" ]]; then
+        install -m 0755 "${script_dir}/x-ui.rc" /etc/init.d/x-ui
+    elif ! curl -fsSL -o "$temp" "$service_url" || [[ ! -s "$temp" ]]; then
+        rm -f "$temp"
+        error "下载 Alpine OpenRC 服务文件失败。"
+        exit 1
+    else
+        mv -f "$temp" /etc/init.d/x-ui
     fi
+    chmod +x /etc/init.d/x-ui
+    rc-update add x-ui default >/dev/null
+    rc-service x-ui restart
+}
 
-    tar zxvf x-ui-linux-${arch}.tar.gz
-    rm x-ui-linux-${arch}.tar.gz -f
-    cd x-ui
-    chmod +x x-ui bin/xray-linux-${arch}
-    cp -f x-ui.service /etc/systemd/system/
-    wget --no-check-certificate -O /usr/bin/x-ui https://raw.githubusercontent.com/vaxilu/x-ui/main/x-ui.sh
-    chmod +x /usr/local/x-ui/x-ui.sh
-    chmod +x /usr/bin/x-ui
-    config_after_install
-    #echo -e "如果是全新安装，默认网页端口为 ${green}54321${plain}，用户名和密码默认都是 ${green}admin${plain}"
-    #echo -e "请自行确保此端口没有被其他程序占用，${yellow}并且确保 54321 端口已放行${plain}"
-    #    echo -e "若想将 54321 修改为其它端口，输入 x-ui 命令进行修改，同样也要确保你修改的端口也是放行的"
-    #echo -e ""
-    #echo -e "如果是更新面板，则按你之前的方式访问面板"
-    #echo -e ""
+install_systemd_service() {
+    install -d "$XUI_SERVICE_DIR"
+    install -m 0644 "$XUI_FOLDER/x-ui.service" "$XUI_SERVICE_DIR/x-ui.service"
     systemctl daemon-reload
     systemctl enable x-ui
-    systemctl start x-ui
-    echo -e "${green}x-ui v${last_version}${plain} 安装完成，面板已启动，"
-    echo -e ""
-    echo -e "x-ui 管理脚本使用方法: "
-    echo -e "----------------------------------------------"
-    echo -e "x-ui              - 显示管理菜单 (功能更多)"
-    echo -e "x-ui start        - 启动 x-ui 面板"
-    echo -e "x-ui stop         - 停止 x-ui 面板"
-    echo -e "x-ui restart      - 重启 x-ui 面板"
-    echo -e "x-ui status       - 查看 x-ui 状态"
-    echo -e "x-ui enable       - 设置 x-ui 开机自启"
-    echo -e "x-ui disable      - 取消 x-ui 开机自启"
-    echo -e "x-ui log          - 查看 x-ui 日志"
-    echo -e "x-ui v2-ui        - 迁移本机器的 v2-ui 账号数据至 x-ui"
-    echo -e "x-ui update       - 更新 x-ui 面板"
-    echo -e "x-ui install      - 安装 x-ui 面板"
-    echo -e "x-ui uninstall    - 卸载 x-ui 面板"
-    echo -e "----------------------------------------------"
+    systemctl restart x-ui
 }
 
-echo -e "${green}开始安装${plain}"
+configure_tls_after_install() {
+    local mode="${XUI_SSL_MODE:-}"
+    if [[ "${XUI_NONINTERACTIVE:-0}" == 1 || ! -t 0 ]]; then
+        [[ -z "$mode" ]] && return 0
+        /usr/bin/x-ui cert
+        return
+    fi
+    if [[ "$existing_database" == true && -z "$mode" ]]; then
+        return 0
+    fi
+    if [[ -z "$mode" ]]; then
+        local configure_tls
+        read -r -p "是否现在为面板配置 TLS 证书？[y/N] " configure_tls
+        [[ "$configure_tls" =~ ^[yY]$ ]] || return 0
+    fi
+    /usr/bin/x-ui cert
+}
+
+install_x_ui() {
+    local requested_version="${1:-}"
+    local archive script_url script_temp
+    service_stop
+    download_release "$requested_version"
+    archive="${XUI_FOLDER}-linux-${arch}.tar.gz"
+
+    rm -rf "$XUI_FOLDER"
+    tar -xzf "$archive" -C "$(dirname "$XUI_FOLDER")" || { rm -f "$archive"; error "解压 x-ui 安装包失败。"; exit 1; }
+    rm -f "$archive"
+    [[ -x "$XUI_FOLDER/x-ui" ]] || { error "安装包中缺少 x-ui 可执行文件。"; exit 1; }
+    chmod +x "$XUI_FOLDER/x-ui" "$XUI_FOLDER/x-ui.sh" "$XUI_FOLDER/bin/xray-linux-${arch}"
+
+    script_url="https://raw.githubusercontent.com/${XUI_REPO}/x-ui/x-ui.sh"
+    script_temp="/usr/bin/x-ui.tmp.$$"
+    rm -f "$script_temp"
+    if ! curl -fsSL -o "$script_temp" "$script_url" || [[ ! -s "$script_temp" ]]; then
+        rm -f "$script_temp"
+        error "下载 x-ui 管理脚本失败。"
+        exit 1
+    fi
+    mv -f "$script_temp" /usr/bin/x-ui
+    chmod +x /usr/bin/x-ui
+
+    config_after_install
+    if [[ "$release" == alpine ]]; then
+        install_openrc_service
+    else
+        install_systemd_service
+    fi
+
+    configure_tls_after_install
+
+    echo -e "${green}x-ui ${tag_version} 安装完成，面板已启动。${plain}"
+}
+
+echo -e "${green}开始安装 x-ui${plain}"
 install_base
-install_x-ui $1
+install_x_ui "${1:-}"

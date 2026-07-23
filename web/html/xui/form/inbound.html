@@ -74,14 +74,14 @@
     {{template "form/shadowsocks"}}
 </template>
 
-<!-- dokodemo-door -->
-<template v-if="inbound.protocol === Protocols.DOKODEMO">
-    {{template "form/dokodemo"}}
+<!-- mixed SOCKS/HTTP -->
+<template v-if="inbound.protocol === Protocols.MIXED">
+    {{template "form/mixed"}}
 </template>
 
-<!-- socks -->
-<template v-if="inbound.protocol === Protocols.SOCKS">
-    {{template "form/socks"}}
+<!-- tunnel -->
+<template v-if="inbound.protocol === Protocols.TUNNEL">
+    {{template "form/tunnel"}}
 </template>
 
 <!-- http -->
@@ -89,13 +89,31 @@
     {{template "form/http"}}
 </template>
 
+<!-- wireguard -->
+<template v-if="inbound.protocol === Protocols.WIREGUARD">
+    {{template "form/wireguard"}}
+</template>
+
+<!-- hysteria / hysteria2 -->
+<template v-if="inbound.protocol === Protocols.HYSTERIA">
+    {{template "form/hysteria"}}
+</template>
+
 <!-- stream settings -->
 <template v-if="inbound.canEnableStream()">
-    {{template "form/streamSettings"}}
+    <template v-if="inbound.protocol === Protocols.HYSTERIA">
+        {{template "form/hysteriaStream"}}
+        <!-- Hysteria2 has a fixed TLS transport but still needs the shared
+             certificate editor (file/content, OCSP and key usage). -->
+        {{template "form/tlsSettings"}}
+    </template>
+    <template v-else>
+        {{template "form/streamSettings"}}
+    </template>
 </template>
 
 <!-- tls settings -->
-<template v-if="inbound.canEnableTls()">
+<template v-if="inbound.protocol !== Protocols.HYSTERIA && inbound.canEnableTls()">
     {{template "form/tlsSettings"}}
 </template>
 

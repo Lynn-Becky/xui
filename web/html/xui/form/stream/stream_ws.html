@@ -8,6 +8,12 @@
     <a-form-item label="路径">
         <a-input v-model.trim="inbound.stream.ws.path"></a-input>
     </a-form-item>
+    <a-form-item label="host">
+        <a-input v-model.trim="inbound.stream.ws.host"></a-input>
+    </a-form-item>
+    <a-form-item label="heartbeatPeriod">
+        <a-input-number v-model="inbound.stream.ws.heartbeatPeriod" :min="0"></a-input-number>
+    </a-form-item>
     <a-form-item label="请求头">
         <a-row>
             <a-button size="small"

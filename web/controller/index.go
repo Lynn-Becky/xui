@@ -61,7 +61,7 @@ func (a *IndexController) login(c *gin.Context) {
 	timeStr := time.Now().Format("2006-01-02 15:04:05")
 	if user == nil {
 		job.NewStatsNotifyJob().UserLoginNotify(form.Username, getRemoteIp(c), timeStr, 0)
-		logger.Infof("wrong username or password: \"%s\" \"%s\"", form.Username, form.Password)
+		logger.Infof("login failed for username %q from %s", form.Username, getRemoteIp(c))
 		pureJsonMsg(c, false, "用户名或密码错误")
 		return
 	} else {

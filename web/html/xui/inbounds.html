@@ -57,9 +57,31 @@
                                 <a-dropdown :trigger="['click']">
                                     <a @click="e => e.preventDefault()">操作</a>
                                     <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
-                                        <a-menu-item v-if="dbInbound.hasLink()" key="qrcode">
+                                        <template v-if="dbInbound.isHysteria || dbInbound.isWireGuard">
+                                            <a-sub-menu v-if="dbInbound.shareEntries().length > 1" key="qrcodeMenu">
+                                                <span slot="title"><a-icon type="qrcode"></a-icon>二维码</span>
+                                                <a-menu-item v-for="entry in dbInbound.shareEntries()" :key="'qrcode:' + entry.index">
+                                                    [[ entry.label ]]
+                                                </a-menu-item>
+                                            </a-sub-menu>
+                                            <a-menu-item v-else-if="dbInbound.hasLink()" key="qrcode:0">
+                                                <a-icon type="qrcode"></a-icon>二维码
+                                            </a-menu-item>
+                                        </template>
+                                        <a-menu-item v-else-if="dbInbound.hasLink()" key="qrcode">
                                             <a-icon type="qrcode"></a-icon>二维码
                                         </a-menu-item>
+                                        <template v-if="dbInbound.isWireGuard && dbInbound.hasClientConfig()">
+                                            <a-sub-menu v-if="dbInbound.shareEntries().length > 1" key="configMenu">
+                                                <span slot="title"><a-icon type="file-text"></a-icon>客户端配置</span>
+                                                <a-menu-item v-for="entry in dbInbound.shareEntries()" :key="'clientConfig:' + entry.index">
+                                                    [[ entry.label ]]
+                                                </a-menu-item>
+                                            </a-sub-menu>
+                                            <a-menu-item v-else key="clientConfig:0">
+                                                <a-icon type="file-text"></a-icon>客户端配置
+                                            </a-menu-item>
+                                        </template>
                                         <a-menu-item key="edit">
                                             <a-icon type="edit"></a-icon>编辑
                                         </a-menu-item>
@@ -89,7 +111,7 @@
                                 <a-button type="link" @click="showInfo(dbInbound)">查看</a-button>
                             </template>
                             <template slot="stream" slot-scope="text, dbInbound, index">
-                                <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
+                                <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS || dbInbound.isHysteria">
                                     <a-tag color="green">[[ inbounds[index].stream.network ]]</a-tag>
                                     <a-tag v-if="inbounds[index].stream.isTls" color="blue">tls</a-tag>
                                     <a-tag v-if="inbounds[index].stream.isXTls" color="blue">xtls</a-tag>
@@ -217,9 +239,20 @@
                 }
             },
             clickAction(action, dbInbound) {
+                if (String(action.key).startsWith('qrcode:')) {
+                    this.showQrcode(dbInbound, Number(String(action.key).split(':')[1]));
+                    return;
+                }
+                if (String(action.key).startsWith('clientConfig:')) {
+                    this.showClientConfig(dbInbound, Number(String(action.key).split(':')[1]));
+                    return;
+                }
                 switch (action.key) {
                     case "qrcode":
                         this.showQrcode(dbInbound);
+                        break;
+                    case "clientConfig":
+                        this.showClientConfig(dbInbound);
                         break;
                     case "edit":
                         this.openEditInbound(dbInbound);
@@ -270,7 +303,7 @@
                     port: inbound.port,
                     protocol: inbound.protocol,
                     settings: inbound.settings.toString(),
-                    streamSettings: inbound.stream.toString(),
+                    streamSettings: inbound.canEnableStream() ? inbound.stream.toString() : '{}',
                     sniffing: inbound.canSniffing() ? inbound.sniffing.toString() : '{}',
                 };
                 await this.submit('/xui/inbound/add', data, inModal);
@@ -288,7 +321,7 @@
                     port: inbound.port,
                     protocol: inbound.protocol,
                     settings: inbound.settings.toString(),
-                    streamSettings: inbound.stream.toString(),
+                    streamSettings: inbound.canEnableStream() ? inbound.stream.toString() : '{}',
                     sniffing: inbound.canSniffing() ? inbound.sniffing.toString() : '{}',
                 };
                 await this.submit(`/xui/inbound/update/${dbInbound.id}`, data, inModal);
@@ -316,9 +349,23 @@
                     onOk: () => this.submit('/xui/inbound/del/' + dbInbound.id),
                 });
             },
-            showQrcode(dbInbound) {
-                const link = dbInbound.genLink();
+            showQrcode(dbInbound, clientIndex=0) {
+                const link = dbInbound.genLink(clientIndex);
+                if (ObjectUtil.isEmpty(link)) {
+                    this.$message.warning('请先添加可用客户端。');
+                    return;
+                }
                 qrModal.show('二维码', link);
+            },
+            showClientConfig(dbInbound, clientIndex=0) {
+                const config = dbInbound.genClientConfig(clientIndex);
+                if (ObjectUtil.isEmpty(config)) {
+                    this.$message.warning('请先添加可用的 WireGuard 客户端。');
+                    return;
+                }
+                const name = String(dbInbound.remark || 'wireguard').replace(/[\\/:*?"<>|]/g, '_');
+                const suffix = clientIndex > 0 ? `-${clientIndex + 1}` : '';
+                txtModal.show('WireGuard 客户端配置', config, `${name}${suffix}.conf`);
             },
             showInfo(dbInbound) {
                 infoModal.show(dbInbound);
