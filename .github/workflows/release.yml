@@ -5,22 +5,34 @@ on:
       - 0.*
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      tag: ${{ steps.release_tag.outputs.tag }}
     steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+      - uses: actions/checkout@v4
+      - name: Select release tag
+        id: release_tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = (Get-Content -LiteralPath 'config/version' -Raw -Encoding UTF8).Trim()
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw 'config/version must contain a release tag.' }
+          git check-ref-format --allow-onelevel "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Invalid release tag in config/version: $tag" }
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF_NAME -ne $tag) {
+            throw "Pushed tag '$env:GITHUB_REF_NAME' does not match config/version '$tag'."
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Create draft prerelease
         env:
-          GITHUB_TOKEN: ${{ secrets.GAYHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ github.ref }}
-          draft: true
-          prerelease: true
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease --target "$GITHUB_SHA" --title "$RELEASE_TAG"
   linuxamd64build:
     name: build x-ui amd64 version
     needs: release
@@ -53,14 +65,10 @@ jobs:
       - name: package
         run: tar -zcvf x-ui-linux-amd64.tar.gz x-ui
       - name: upload
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GAYHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: x-ui-linux-amd64.tar.gz
-          asset_name: x-ui-linux-amd64.tar.gz
-          asset_content_type: application/gzip
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" x-ui-linux-amd64.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
   linuxarm64build:
     name: build x-ui arm64 version
     needs: release
@@ -95,14 +103,10 @@ jobs:
       - name: package
         run: tar -zcvf x-ui-linux-arm64.tar.gz x-ui
       - name: upload
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GAYHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: x-ui-linux-arm64.tar.gz
-          asset_name: x-ui-linux-arm64.tar.gz
-          asset_content_type: application/gzip
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" x-ui-linux-arm64.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
   linuxs390xbuild:
     name: build x-ui s390x version
     needs: release
@@ -137,11 +141,7 @@ jobs:
       - name: package
         run: tar -zcvf x-ui-linux-s390x.tar.gz x-ui
       - name: upload
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GAYHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: x-ui-linux-s390x.tar.gz
-          asset_name: x-ui-linux-s390x.tar.gz
-          asset_content_type: application/gzip
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" x-ui-linux-s390x.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
