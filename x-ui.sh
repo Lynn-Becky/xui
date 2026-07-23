@@ -113,7 +113,7 @@ before_show_menu() {
 }
 
 install() {
-    bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/Alpine-x-ui/x-ui/install.sh)
+    bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/x-ui/install.sh)
     if [[ $? == 0 ]]; then
         if [[ $# == 0 ]]; then
             start
@@ -132,7 +132,7 @@ update() {
         fi
         return 0
     fi
-    bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/Alpine-x-ui/x-ui/install.sh)
+    bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/x-ui/install.sh)
     if [[ $? == 0 ]]; then
         LOGI "更新完成，已自动重启面板 "
         exit 0
@@ -413,7 +413,7 @@ bbr_menu() {
 update_shell() {
     local script_temp="/usr/bin/x-ui.tmp.$$"
     rm -f "$script_temp"
-    if ! curl -fsSL --retry 3 -o "$script_temp" https://raw.githubusercontent.com/Lynn-Becky/Alpine-x-ui/x-ui/x-ui.sh ||
+    if ! curl -fsSL --retry 3 -o "$script_temp" https://raw.githubusercontent.com/Lynn-Becky/xui/x-ui/x-ui.sh ||
         [[ ! -s "$script_temp" ]]; then
         rm -f "$script_temp"
         echo ""

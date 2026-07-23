@@ -8,7 +8,7 @@ yellow='\033[0;33m'
 plain='\033[0m'
 
 XUI_FOLDER="${XUI_FOLDER:-/usr/local/x-ui}"
-XUI_REPO="${XUI_REPO:-Lynn-Becky/Alpine-x-ui}"
+XUI_REPO="${XUI_REPO:-Lynn-Becky/xui}"
 XUI_SERVICE_DIR="${XUI_SERVICE_DIR:-/etc/systemd/system}"
 XUI_DB_FILE="${XUI_DB_FILE:-/etc/x-ui/x-ui.db}"
 existing_database=false
