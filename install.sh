@@ -14,6 +14,12 @@ XUI_DB_FILE="${XUI_DB_FILE:-/etc/x-ui/x-ui.db}"
 existing_database=false
 [[ -f "$XUI_DB_FILE" ]] && existing_database=true
 
+install_panel_settings_changed=false
+install_panel_username=""
+install_panel_password=""
+install_panel_port=""
+install_panel_base_path="/"
+
 script_dir=""
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
     script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -94,8 +100,13 @@ service_stop() {
 }
 
 config_after_install() {
-    echo -e "${yellow}出于安全考虑，安装/更新完成后需要修改端口与账户密码。${plain}"
+    echo -e "${yellow}出于安全考虑，新安装会随机生成面板账号、密码和端口。${plain}"
     local config_web_base_path="${XUI_WEB_BASE_PATH:-}"
+    local config_account=""
+    local config_password=""
+    local config_port=""
+    local config_confirm=""
+    local config_input=""
     if [[ -z "$config_web_base_path" && ! -f "$XUI_DB_FILE" ]]; then
         config_web_base_path="$(gen_random_string 18)"
         echo -e "${green}已生成随机面板访问路径：/${config_web_base_path}/${plain}"
@@ -106,32 +117,116 @@ config_after_install() {
         config_web_base_path="${config_web_base_path%/}"
         echo -e "${green}面板访问路径：/${config_web_base_path}/${plain}"
     fi
+    install_panel_base_path="/${config_web_base_path:+${config_web_base_path}/}"
 
     if [[ "${XUI_NONINTERACTIVE:-0}" == 1 || ! -t 0 ]]; then
-        if [[ -n "${XUI_USERNAME:-}" && -n "${XUI_PASSWORD:-}" ]]; then
+        if [[ "$existing_database" == false ]]; then
+            config_account="${XUI_USERNAME:-$(gen_random_string 12)}"
+            config_password="${XUI_PASSWORD:-$(gen_random_string 24)}"
+            config_port="${XUI_PORT:-$(gen_random_port)}"
+            if ! is_valid_port "$config_port"; then
+                config_port="$(gen_random_port)"
+            fi
+            "$XUI_FOLDER/x-ui" setting -username "$config_account" -password "$config_password" -port "$config_port"
+            install_panel_settings_changed=true
+        elif [[ -n "${XUI_USERNAME:-}" && -n "${XUI_PASSWORD:-}" ]]; then
             "$XUI_FOLDER/x-ui" setting -username "$XUI_USERNAME" -password "$XUI_PASSWORD"
         fi
-        if [[ "${XUI_PORT:-}" =~ ^[0-9]+$ ]] && (( XUI_PORT >= 1 && XUI_PORT <= 65535 )); then
+        if [[ "$existing_database" == true ]] && is_valid_port "${XUI_PORT:-}"; then
             "$XUI_FOLDER/x-ui" setting -port "$XUI_PORT"
         fi
-        echo -e "${yellow}非交互安装已跳过未通过环境变量提供的配置项。${plain}"
+        echo -e "${yellow}非交互安装已使用环境变量或安全随机值配置面板。${plain}"
         return
     fi
 
-    read -r -p "确认是否继续？[y/n] " config_confirm
+    read -r -p "是否要手动设置用户名、密码和端口？[y/N] " config_confirm
     if [[ "$config_confirm" =~ ^[yY]$ ]]; then
-        read -r -p "请设置您的账户名: " config_account
-        read -r -p "请设置您的账户密码: " config_password
-        read -r -p "请设置面板访问端口: " config_port
-        if [[ -n "$config_account" && -n "$config_password" ]]; then
-            "$XUI_FOLDER/x-ui" setting -username "$config_account" -password "$config_password"
-        fi
-        if [[ "$config_port" =~ ^[0-9]+$ ]] && (( config_port >= 1 && config_port <= 65535 )); then
-            "$XUI_FOLDER/x-ui" setting -port "$config_port"
-        fi
+        config_account="$(gen_random_string 12)"
+        config_password="$(gen_random_string 24)"
+        config_port="$(gen_random_port)"
+
+        read -r -p "请设置您的账户名（随机账号：${config_account}，直接回车使用随机用户名）: " config_input
+        [[ -n "$config_input" ]] && config_account="$config_input"
+        read -r -p "请设置您的账户密码（随机密码：${config_password}，直接回车使用随机密码）: " config_input
+        [[ -n "$config_input" ]] && config_password="$config_input"
+        while true; do
+            read -r -p "请设置面板访问端口（随机端口：${config_port}，范围 10000-65535，直接回车使用随机端口）: " config_input
+            if [[ -z "$config_input" ]]; then
+                break
+            fi
+            if is_valid_port "$config_input"; then
+                config_port="$config_input"
+                break
+            fi
+            error "端口必须在 1-65535 之间，请重新输入。"
+        done
+        "$XUI_FOLDER/x-ui" setting -username "$config_account" -password "$config_password" -port "$config_port"
+        install_panel_settings_changed=true
+    elif [[ "$existing_database" == false ]]; then
+        config_account="$(gen_random_string 12)"
+        config_password="$(gen_random_string 24)"
+        config_port="$(gen_random_port)"
+        "$XUI_FOLDER/x-ui" setting -username "$config_account" -password "$config_password" -port "$config_port"
+        install_panel_settings_changed=true
+        echo -e "${green}已使用安全随机的用户名、密码和端口。${plain}"
     else
-        echo -e "${yellow}已取消，仍为默认设置，请及时修改。${plain}"
+        echo -e "${yellow}已保留现有面板账号、密码和端口。${plain}"
     fi
+
+    if [[ "$install_panel_settings_changed" == true ]]; then
+        install_panel_username="$config_account"
+        install_panel_password="$config_password"
+        install_panel_port="$config_port"
+    fi
+}
+
+is_valid_port() {
+    [[ "$1" =~ ^[0-9]+$ ]] && (( $1 >= 1 && $1 <= 65535 ))
+}
+
+gen_random_port() {
+    local random_hex
+    random_hex="$(openssl rand -hex 4)"
+    printf '%d\n' "$((16#$random_hex % 55536 + 10000))"
+}
+
+get_server_ip() {
+    local server_ip
+    server_ip="$(curl -4fsS --connect-timeout 5 --max-time 10 https://api.ipify.org 2>/dev/null || true)"
+    if [[ ! "$server_ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        server_ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | awk '/^[0-9]{1,3}(\.[0-9]{1,3}){3}$/ { print; exit }' || true)"
+    fi
+    printf '%s\n' "${server_ip:-<服务器 IP>}"
+}
+
+print_panel_login_info() {
+    local settings
+    local protocol="http"
+    local username="$install_panel_username"
+    local password="$install_panel_password"
+    local port="$install_panel_port"
+    local base_path="$install_panel_base_path"
+    local server_ip
+
+    settings="$("$XUI_FOLDER/x-ui" setting -show 2>/dev/null || true)"
+    [[ -n "$username" ]] || username="$(printf '%s\n' "$settings" | awk -F ': ' '/^username: / { print substr($0, index($0, ": ") + 2); exit }')"
+    [[ -n "$password" ]] || password="$(printf '%s\n' "$settings" | awk -F ': ' '/^userpasswd: / { print substr($0, index($0, ": ") + 2); exit }')"
+    [[ -n "$port" ]] || port="$(printf '%s\n' "$settings" | awk -F ': ' '/^port: / { print substr($0, index($0, ": ") + 2); exit }')"
+    base_path="$(printf '%s\n' "$settings" | awk -F ': ' '/^webBasePath: / { print substr($0, index($0, ": ") + 2); exit }')"
+    [[ -n "$base_path" ]] || base_path="/"
+    if [[ "$base_path" != /* ]]; then
+        base_path="/${base_path}"
+    fi
+    [[ "$base_path" == */ ]] || base_path="${base_path}/"
+    if printf '%s\n' "$settings" | grep -q '^webCertFile: /'; then
+        protocol="https"
+    fi
+    server_ip="$(get_server_ip)"
+    echo ""
+    echo -e "${green}面板登录信息（请妥善保存）：${plain}"
+    echo "用户名：${username}"
+    echo "密码：${password}"
+    echo "登录 URL：${protocol}://${server_ip}:${port}${base_path}"
 }
 
 gen_random_string() {
@@ -243,6 +338,7 @@ install_x_ui() {
     configure_tls_after_install
 
     echo -e "${green}x-ui ${tag_version} 安装完成，面板已启动。${plain}"
+    print_panel_login_info
 }
 
 echo -e "${green}开始安装 x-ui${plain}"
