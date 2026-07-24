@@ -535,12 +535,6 @@ class XHttpStreamSettings extends XrayCommonClass {
         this.enableXmux = !!loadedXmux;
         this.xmux = Object.assign({}, xmuxDefaults, loadedXmux || {});
         this.headers = XrayCommonClass.toHeaders(json.headers);
-        if (json.sessionIDPlacement === undefined && json.sessionPlacement !== undefined) {
-            this.sessionIDPlacement = json.sessionPlacement;
-        }
-        if (json.sessionIDKey === undefined && json.sessionKey !== undefined) {
-            this.sessionIDKey = json.sessionKey;
-        }
     }
 
     addHeader(name, value) {
@@ -640,18 +634,27 @@ class RealityStreamSettings extends XrayCommonClass {
         this.shortIds = [];
         this.mldsa65Seed = '';
         this.masterKeyLog = '';
-        this.settings = {
+        const defaultSettings = {
             publicKey: '',
             fingerprint: 'chrome',
             serverName: '',
             spiderX: '/',
             mldsa65Verify: '',
         };
+        this.settings = defaultSettings;
         ObjectUtil.cloneProps(this, json);
-        this.target = json.target || json.dest || '';
+        this.target = json.target || '';
         this.serverNames = XrayCommonClass.toStringArray(json.serverNames);
         this.shortIds = XrayCommonClass.toStringArray(json.shortIds);
-        this.settings = Object.assign({}, this.settings, json.settings || {});
+        this.settings = Object.assign({}, defaultSettings, json.settings || {});
+        const legacyServerName = String(this.settings.serverName || '').trim();
+        if (legacyServerName) {
+            this.serverNames = [
+                legacyServerName,
+                ...this.serverNames.filter(serverName => serverName !== legacyServerName),
+            ];
+            this.settings.serverName = '';
+        }
     }
 
     static fromJson(json={}) {
@@ -860,18 +863,6 @@ class StreamSettings extends XrayCommonClass {
         }
     }
 
-    get isXTls() {
-        return this.security === "xtls";
-    }
-
-    set isXTls(isXTls) {
-        if (isXTls) {
-            this.security = 'xtls';
-        } else {
-            this.security = 'none';
-        }
-    }
-
     get isReality() {
         return this.security === 'reality';
     }
@@ -881,11 +872,10 @@ class StreamSettings extends XrayCommonClass {
     }
 
     static fromJson(json={}) {
-        let tls;
-        tls = TlsStreamSettings.fromJson(json.tlsSettings || json.xtlsSettings);
+        const tls = TlsStreamSettings.fromJson(json.tlsSettings);
         const stream = new StreamSettings(
             json.method || json.network || 'tcp',
-            json.security === 'xtls' ? 'tls' : (json.security || 'none'),
+            json.security || 'none',
             tls,
             TcpStreamSettings.fromJson(json.tcpSettings),
             KcpStreamSettings.fromJson(json.kcpSettings),
@@ -908,7 +898,6 @@ class StreamSettings extends XrayCommonClass {
             network: network,
             security: this.security,
             tlsSettings: this.isTls ? this.tls.toJson() : undefined,
-            xtlsSettings: this.isXTls ? this.tls.toJson() : undefined,
             realitySettings: this.isReality ? this.reality.toJson() : undefined,
             tcpSettings: network === 'tcp' ? this.tcp.toJson() : undefined,
             kcpSettings: network === 'kcp' ? this.kcp.toJson() : undefined,
@@ -927,7 +916,7 @@ class StreamSettings extends XrayCommonClass {
 }
 
 class Sniffing extends XrayCommonClass {
-    constructor(enabled=true, destOverride=['http', 'tls', 'quic', 'fakedns'],
+    constructor(enabled=false, destOverride=['http', 'tls', 'quic', 'fakedns'],
                 metadataOnly=false, routeOnly=false, ipsExcluded=[], domainsExcluded=[]) {
         super();
         this.enabled = enabled;
@@ -939,7 +928,9 @@ class Sniffing extends XrayCommonClass {
     }
 
     static fromJson(json={}) {
-        let destOverride = ObjectUtil.clone(json.destOverride);
+        let destOverride = ObjectUtil.isEmpty(json.destOverride)
+            ? ['http', 'tls', 'quic', 'fakedns']
+            : ObjectUtil.clone(json.destOverride);
         if (!ObjectUtil.isEmpty(destOverride) && !ObjectUtil.isArrEmpty(destOverride)) {
             if (ObjectUtil.isEmpty(destOverride[0])) {
                 destOverride = ['http', 'tls', 'quic', 'fakedns'];
@@ -1019,7 +1010,9 @@ class Inbound extends XrayCommonClass {
         if (this._protocol !== Protocols.HYSTERIA) return;
         this.stream.network = 'hysteria';
         this.stream.security = 'tls';
-        this.stream.tls.alpn = ['h3'];
+        if (this.stream.tls.alpn.length !== 1 || this.stream.tls.alpn[0] !== 'h3') {
+            this.stream.tls.alpn = ['h3'];
+        }
         this.settings.version = 2;
         // Current 3x-ui/Xray Hysteria inbounds are always Hysteria2.
         this.stream.hysteria.version = 2;
@@ -1032,18 +1025,6 @@ class Inbound extends XrayCommonClass {
     set tls(isTls) {
         if (isTls) {
             this.stream.security = 'tls';
-        } else {
-            this.stream.security = 'none';
-        }
-    }
-
-    get xtls() {
-        return this.stream.security === 'xtls';
-    }
-
-    set xtls(isXTls) {
-        if (isXTls) {
-            this.stream.security = 'xtls';
         } else {
             this.stream.security = 'none';
         }
@@ -1162,7 +1143,7 @@ class Inbound extends XrayCommonClass {
     }
 
     get serverName() {
-        if (this.stream.isTls || this.stream.isXTls) {
+        if (this.stream.isTls) {
             return this.stream.tls.server;
         }
         if (this.stream.isReality) {
@@ -1254,17 +1235,6 @@ class Inbound extends XrayCommonClass {
 
     canSetTls() {
         return this.canEnableTls();
-    }
-
-    canEnableXTls() {
-        switch (this.protocol) {
-            case Protocols.VLESS:
-            case Protocols.TROJAN:
-                break;
-            default:
-                return false;
-        }
-        return this.network === "tcp";
     }
 
     canEnableReality() {
@@ -1465,8 +1435,8 @@ class Inbound extends XrayCommonClass {
     }
 
     applySecurityParams(params) {
-        params.set('security', this.stream.security === 'xtls' ? 'tls' : this.stream.security);
-        if (this.stream.security === 'tls' || this.stream.security === 'xtls') {
+        params.set('security', this.stream.security);
+        if (this.stream.security === 'tls') {
             const tls = this.stream.tls;
             if (tls.server) params.set('sni', tls.server);
             if (tls.alpn.length > 0) params.set('alpn', tls.alpn.join(','));

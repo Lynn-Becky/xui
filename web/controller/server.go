@@ -2,6 +2,7 @@ package controller
 
 import (
 	"github.com/gin-gonic/gin"
+	"net/http"
 	"time"
 	"x-ui/web/global"
 	"x-ui/web/service"
@@ -35,6 +36,12 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.POST("/status", a.status)
 	g.POST("/getXrayVersion", a.getXrayVersion)
 	g.POST("/installXray/:version", a.installXray)
+	g.POST("/stopXrayService", a.stopXrayService)
+	g.POST("/restartXrayService", a.restartXrayService)
+	g.POST("/updateGeofile", a.updateGeofile)
+	g.POST("/updateGeofile/:fileName", a.updateGeofile)
+	g.GET("/getDb", a.getDb)
+	g.POST("/importDB", a.importDB)
 	g.POST("/getNewX25519Cert", a.getNewX25519Cert)
 	g.POST("/getNewMldsa65", a.getNewMldsa65)
 	g.POST("/getNewVlessEnc", a.getNewVlessEnc)
@@ -85,6 +92,51 @@ func (a *ServerController) installXray(c *gin.Context) {
 	version := c.Param("version")
 	err := a.serverService.UpdateXray(version)
 	jsonMsg(c, "安装 xray", err)
+}
+
+func (a *ServerController) stopXrayService(c *gin.Context) {
+	err := a.serverService.StopXrayService()
+	jsonMsg(c, "停止 Xray", err)
+}
+
+func (a *ServerController) restartXrayService(c *gin.Context) {
+	err := a.serverService.RestartXrayService()
+	jsonMsg(c, "重启 Xray", err)
+}
+
+func (a *ServerController) updateGeofile(c *gin.Context) {
+	fileName := c.Param("fileName")
+	if fileName != "" && !a.serverService.IsValidGeofileName(fileName) {
+		jsonMsg(c, "更新 Geo 文件", service.ErrInvalidGeofileName)
+		return
+	}
+	err := a.serverService.UpdateGeofile(fileName)
+	jsonMsg(c, "更新 Geo 文件", err)
+}
+
+func (a *ServerController) getDb(c *gin.Context) {
+	data, err := a.serverService.GetDb()
+	if err != nil {
+		jsonMsg(c, "备份数据库", err)
+		return
+	}
+	c.Header("Content-Disposition", "attachment; filename="+a.serverService.BackupFilename())
+	c.Data(http.StatusOK, "application/octet-stream", data)
+}
+
+func (a *ServerController) importDB(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, service.MaxDatabaseUploadSize+(1<<20))
+	file, _, err := c.Request.FormFile("db")
+	if err != nil {
+		jsonMsg(c, "读取数据库备份", err)
+		return
+	}
+	defer file.Close()
+	if err := a.serverService.ImportDB(file); err != nil {
+		jsonMsg(c, "恢复数据库", err)
+		return
+	}
+	jsonMsg(c, "恢复数据库", nil)
 }
 
 func (a *ServerController) getNewX25519Cert(c *gin.Context) {

@@ -1,5 +1,5 @@
 {{define "form/inbound"}}
-<a-tabs class="inbound-form-tabs" v-model="inModal.activeTab" :animated="false">
+<a-tabs class="inbound-form-tabs" v-model="inModal.activeTab" :animated="false" @change="inboundTabChange">
     <a-tab-pane key="basic" tab="基础配置" force-render>
         <a-form layout="inline">
             <a-form-item label='{{ i18n "remark" }}'>
@@ -109,7 +109,7 @@
     </a-tab-pane>
 
     <a-tab-pane key="advanced" tab="高级配置" force-render>
-        <pre class="inbound-json-preview">[[ inbound.toString() ]]</pre>
+        <pre class="inbound-json-preview">[[ inModal.inboundJsonPreview ]]</pre>
     </a-tab-pane>
 </a-tabs>
 {{end}}

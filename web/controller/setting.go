@@ -115,7 +115,11 @@ func (a *SettingController) updateSetting(c *gin.Context) {
 		jsonMsg(c, "修改设置", err)
 		return
 	}
+	oldXrayTemplate, oldTemplateErr := a.settingService.GetXrayConfigTemplate()
 	err = a.settingService.UpdateAllSetting(allSetting)
+	if err == nil && oldTemplateErr == nil && oldXrayTemplate != allSetting.XrayTemplateConfig {
+		a.xrayService.SetToNeedRestart()
+	}
 	jsonMsg(c, "修改设置", err)
 }
 

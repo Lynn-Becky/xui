@@ -13,6 +13,7 @@ import (
 var p *xray.Process
 var lock sync.Mutex
 var isNeedXrayRestart atomic.Bool
+var isManuallyStopped atomic.Bool
 var result string
 
 type XrayService struct {
@@ -89,6 +90,10 @@ func (s *XrayService) RestartXray(isForce bool) error {
 	lock.Lock()
 	defer lock.Unlock()
 	logger.Debug("restart xray, force:", isForce)
+	if !isForce && isManuallyStopped.Load() {
+		return nil
+	}
+	isManuallyStopped.Store(false)
 
 	xrayConfig, err := s.GetXrayConfig()
 	if err != nil {
@@ -111,6 +116,7 @@ func (s *XrayService) RestartXray(isForce bool) error {
 func (s *XrayService) StopXray() error {
 	lock.Lock()
 	defer lock.Unlock()
+	isManuallyStopped.Store(true)
 	logger.Debug("stop xray")
 	if s.IsXrayRunning() {
 		return p.Stop()
@@ -124,4 +130,8 @@ func (s *XrayService) SetToNeedRestart() {
 
 func (s *XrayService) IsNeedRestartAndSetFalse() bool {
 	return isNeedXrayRestart.CAS(true, false)
+}
+
+func (s *XrayService) DidXrayCrash() bool {
+	return !s.IsXrayRunning() && !isManuallyStopped.Load()
 }

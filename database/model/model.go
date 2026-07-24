@@ -117,9 +117,6 @@ func (i *Inbound) Validate() error {
 			return fmt.Errorf("realitySettings is required when REALITY is enabled")
 		}
 		target, _ := reality["target"].(string)
-		if target == "" {
-			target, _ = reality["dest"].(string)
-		}
 		if !validRealityTarget(target) {
 			return fmt.Errorf("REALITY target must include a valid port")
 		}
@@ -429,8 +426,7 @@ func validRealityTarget(target string) bool {
 	return err == nil && port > 0 && port <= 65535
 }
 
-// sanitizeInboundSettings removes panel-only compatibility fields and heals
-// protocol values that recent xray-core versions reject.
+// sanitizeInboundSettings removes panel-only fields before runtime configuration.
 func sanitizeInboundSettings(protocol Protocol, settings string) string {
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(settings), &parsed); err != nil {
@@ -444,16 +440,6 @@ func sanitizeInboundSettings(protocol Protocol, settings string) string {
 			delete(parsed, "encryption")
 			changed = true
 		}
-		if clients, ok := parsed["clients"].([]interface{}); ok {
-			for _, client := range clients {
-				if values, ok := client.(map[string]interface{}); ok {
-					if flow, _ := values["flow"].(string); flow == "xtls-rprx-direct" || flow == "xtls-rprx-origin" {
-						values["flow"] = ""
-						changed = true
-					}
-				}
-			}
-		}
 	case VMess:
 		clients, _ := parsed["clients"].([]interface{})
 		for _, client := range clients {
@@ -466,11 +452,6 @@ func sanitizeInboundSettings(protocol Protocol, settings string) string {
 		}
 	case Shadowsocks:
 		method, _ := parsed["method"].(string)
-		if method == "none" || method == "plain" {
-			method = "chacha20-ietf-poly1305"
-			parsed["method"] = method
-			changed = true
-		}
 		clients, _ := parsed["clients"].([]interface{})
 		is2022 := strings.HasPrefix(method, "2022-blake3-")
 		for _, client := range clients {
@@ -573,16 +554,6 @@ func sanitizeInboundStreamSettings(streamSettings string) string {
 		return streamSettings
 	}
 	changed := false
-	if security, _ := stream["security"].(string); security == "xtls" {
-		stream["security"] = "tls"
-		if _, hasTLS := stream["tlsSettings"]; !hasTLS {
-			if legacy, hasLegacy := stream["xtlsSettings"]; hasLegacy {
-				stream["tlsSettings"] = legacy
-			}
-		}
-		delete(stream, "xtlsSettings")
-		changed = true
-	}
 	for _, key := range []string{"tlsSettings", "realitySettings"} {
 		if security, ok := stream[key].(map[string]interface{}); ok {
 			if _, exists := security["settings"]; exists {
@@ -592,20 +563,6 @@ func sanitizeInboundStreamSettings(streamSettings string) string {
 		}
 	}
 	if xhttp, ok := stream["xhttpSettings"].(map[string]interface{}); ok {
-		if value, exists := xhttp["sessionPlacement"]; exists {
-			if _, renamed := xhttp["sessionIDPlacement"]; !renamed {
-				xhttp["sessionIDPlacement"] = value
-			}
-			delete(xhttp, "sessionPlacement")
-			changed = true
-		}
-		if value, exists := xhttp["sessionKey"]; exists {
-			if _, renamed := xhttp["sessionIDKey"]; !renamed {
-				xhttp["sessionIDKey"] = value
-			}
-			delete(xhttp, "sessionKey")
-			changed = true
-		}
 		for _, key := range []string{"xmux", "downloadSettings", "scMinPostsIntervalMs", "uplinkChunkSize", "noGRPCHeader", "enableXmux"} {
 			if _, exists := xhttp[key]; exists {
 				delete(xhttp, key)

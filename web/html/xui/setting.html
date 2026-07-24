@@ -75,9 +75,15 @@
                 <a-space direction="vertical">
                     <a-space direction="horizontal">
                         <a-button type="primary" :disabled="saveBtnDisable" @click="updateAllSetting">保存配置</a-button>
+                        {{ if eq .page "xray" }}
+                        <a-button type="danger" icon="poweroff" @click="stopXray">停止 Xray</a-button>
+                        <a-button icon="reload" @click="restartXray">重启 Xray</a-button>
+                        {{ else }}
                         <a-button type="danger" :disabled="!saveBtnDisable" @click="restartPanel">重启面板</a-button>
+                        {{ end }}
                     </a-space>
-                    <a-tabs default-active-key="1">
+                    <a-tabs default-active-key="{{ if eq .page "xray" }}3{{ else if eq .page "outbounds" }}6{{ else }}1{{ end }}">
+                        {{ if eq .page "setting" }}
                         <a-tab-pane key="1" tab="面板配置">
                             <a-list item-layout="horizontal" style="background: white">
                                 <setting-list-item type="text" title="面板监听 IP" desc="默认留空监听所有 IP，重启面板生效" v-model="allSetting.webListen"></setting-list-item>
@@ -108,11 +114,15 @@
                                 </a-form-item>
                             </a-form>
                         </a-tab-pane>
-                        <a-tab-pane key="3" tab="xray 相关设置">
+                        {{ end }}
+                        {{ if eq .page "xray" }}
+                        <a-tab-pane key="3" tab="Xray设置">
                             <a-list item-layout="horizontal" style="background: white">
                                 <setting-list-item type="textarea" title="xray 配置模版" desc="以该模版为基础生成最终的 xray 配置文件，重启面板生效" v-model="allSetting.xrayTemplateConfig"></setting-list-item>
                             </a-list>
                         </a-tab-pane>
+                        {{ end }}
+                        {{ if eq .page "setting" }}
                         <a-tab-pane key="4" tab="TG提醒相关设置">
                             <a-list item-layout="horizontal" style="background: white">
                                 <setting-list-item type="switch" title="启用电报机器人" desc="重启面板生效"  v-model="allSetting.tgBotEnable"></setting-list-item>
@@ -121,7 +131,9 @@
                                 <setting-list-item type="text" title="电报机器人通知时间" desc="采用Crontab定时格式,重启面板生效"  v-model="allSetting.tgRunTime"></setting-list-item>
                             </a-list>
                         </a-tab-pane>
-                        <a-tab-pane key="6" tab="出站">
+                        {{ end }}
+                        {{ if eq .page "outbounds" }}
+                        <a-tab-pane key="6" tab="出战列表">
                             <a-alert v-if="outboundTemplateError" type="error" show-icon
                                      :message="outboundTemplateError" style="margin: 12px 0"></a-alert>
                             <a-card :bordered="false" style="background: white">
@@ -152,17 +164,21 @@
                                 </a-space>
                             </a-card>
                         </a-tab-pane>
+                        {{ end }}
+                        {{ if eq .page "setting" }}
                         <a-tab-pane key="5" tab="其他设置">
                             <a-list item-layout="horizontal" style="background: white">
                                 <setting-list-item type="text" title="时区" desc="定时任务按照该时区的时间运行，重启面板生效" v-model="allSetting.timeLocation"></setting-list-item>
                             </a-list>
                         </a-tab-pane>
+                        {{ end }}
                     </a-tabs>
                 </a-space>
             </a-spin>
         </a-layout-content>
     </a-layout>
 
+{{ if eq .page "outbounds" }}
 <a-modal :visible="outboundModal.visible" :width="900" :mask-closable="false"
          :title="outboundModal.index < 0 ? '添加出站' : '编辑出站'"
          ok-text="保存出站" cancel-text="取消" @ok="saveOutbound" @cancel="closeOutboundModal">
@@ -326,6 +342,7 @@
         </a-space>
     </a-spin>
 </a-modal>
+{{ end }}
 </a-layout>
 {{template "js" .}}
 {{template "component/setting"}}
@@ -661,6 +678,33 @@
                 if (msg.success) {
                     this.user = {};
                 }
+            },
+            stopXray() {
+                this.$confirm({
+                    title: '停止 Xray',
+                    content: '确定要停止 Xray Core 吗？',
+                    okText: '停止',
+                    okType: 'danger',
+                    cancelText: '取消',
+                    onOk: async () => {
+                        this.loading(true);
+                        await HttpUtil.post('/server/stopXrayService');
+                        this.loading(false);
+                    },
+                });
+            },
+            restartXray() {
+                this.$confirm({
+                    title: '重启 Xray',
+                    content: '确定要重启 Xray Core 吗？',
+                    okText: '重启',
+                    cancelText: '取消',
+                    onOk: async () => {
+                        this.loading(true);
+                        await HttpUtil.post('/server/restartXrayService');
+                        this.loading(false);
+                    },
+                });
             },
             async restartPanel() {
                 await new Promise(resolve => {

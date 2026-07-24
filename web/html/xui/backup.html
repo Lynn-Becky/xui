@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<style>
+    @media (min-width: 769px) {
+        .ant-layout-content { margin: 24px 16px; }
+    }
+    .backup-actions { padding: 24px; background: white; }
+</style>
+<body>
+<a-layout id="app" v-cloak>
+    {{template "commonSider" .}}
+    <a-layout id="content-layout">
+        <a-layout-content>
+            <a-spin :spinning="spinning" :delay="300" tip='{{ i18n "loading" }}'>
+                <div class="backup-actions">
+                    <a-space>
+                        <a-button type="primary" icon="download" @click="exportDatabase">备份数据库</a-button>
+                        <a-button icon="upload" @click="selectDatabase">恢复数据库</a-button>
+                    </a-space>
+                    <input ref="databaseInput" type="file" accept=".db,application/x-sqlite3" style="display: none" @change="restoreDatabase">
+                </div>
+            </a-spin>
+        </a-layout-content>
+    </a-layout>
+</a-layout>
+{{template "js" .}}
+<script>
+    const app = new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#app',
+        data: {siderDrawer, spinning: false},
+        methods: {
+            exportDatabase() { location.href = basePath + 'server/getDb'; },
+            selectDatabase() {
+                this.$refs.databaseInput.value = '';
+                this.$refs.databaseInput.click();
+            },
+            async restoreDatabase(event) {
+                const file = event.target.files && event.target.files[0];
+                if (!file) return;
+                this.$confirm({
+                    title: '恢复数据库',
+                    content: '恢复会替换当前面板数据并重启 Xray 和面板。确定继续吗？',
+                    okText: '恢复',
+                    okType: 'danger',
+                    cancelText: '取消',
+                    onOk: async () => {
+                        const form = new FormData();
+                        form.append('db', file);
+                        this.spinning = true;
+                        const msg = await HttpUtil.post('/server/importDB', form);
+                        if (!msg.success) {
+                            this.spinning = false;
+                            return;
+                        }
+                        await HttpUtil.post('/xui/setting/restartPanel');
+                        await PromiseUtil.sleep(5000);
+                        location.href = basePath;
+                    },
+                });
+            },
+        },
+    });
+</script>
+</body>
+</html>

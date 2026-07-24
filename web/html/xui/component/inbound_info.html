@@ -24,18 +24,14 @@
     <p>grpc serviceName: <a-tag color="green">[[ inbound.serviceName ]]</a-tag></p>
 </template>
 
-<template v-if="inbound.tls || inbound.xtls">
+<template v-if="inbound.tls">
     <p v-if="inbound.tls">tls: <a-tag color="green">{{ i18n "enabled" }}</a-tag></p>
-    <p v-if="inbound.xtls">xtls: <a-tag color="green">{{ i18n "enabled" }}</a-tag></p>
 </template>
 <template v-else>
     <p>tls: <a-tag color="red">{{ i18n "disabled" }}</a-tag></p>
 </template>
 <p v-if="inbound.tls">
     tls {{ i18n "domainName" }}: <a-tag :color="inbound.serverName ? 'green' : 'orange'">[[ inbound.serverName ? inbound.serverName : '{{ i18n "none" }}' ]]</a-tag>
-</p>
-<p v-if="inbound.xtls">
-    xtls {{ i18n "domainName" }}: <a-tag :color="inbound.serverName ? 'green' : 'orange'">[[ inbound.serverName ? inbound.serverName : '{{ i18n "none" }}' ]]</a-tag>
 </p>
 {{end}}
 
@@ -53,7 +49,6 @@
 
     <template v-if="dbInbound.isVLess">
         <p>uuid: <a-tag color="green">[[ inbound.uuid ]]</a-tag></p>
-        <p v-if="inbound.isXTls">flow: <a-tag color="green">[[ inbound.flow ]]</a-tag></p>
     </template>
 
     <template v-if="dbInbound.isTrojan">

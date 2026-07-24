@@ -12,7 +12,6 @@ import (
 	"x-ui/config"
 	"x-ui/database"
 	"x-ui/logger"
-	"x-ui/v2ui"
 	"x-ui/web"
 	"x-ui/web/global"
 	"x-ui/web/service"
@@ -281,10 +280,6 @@ func main() {
 
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
 
-	v2uiCmd := flag.NewFlagSet("v2-ui", flag.ExitOnError)
-	var dbPath string
-	v2uiCmd.StringVar(&dbPath, "db", "/etc/v2-ui/v2-ui.db", "set v2-ui db file path")
-
 	settingCmd := flag.NewFlagSet("setting", flag.ExitOnError)
 	var port int
 	var username string
@@ -323,7 +318,6 @@ func main() {
 		fmt.Println()
 		fmt.Println("Commands:")
 		fmt.Println("    run            run web panel")
-		fmt.Println("    v2-ui          migrate form v2-ui")
 		fmt.Println("    setting        set settings")
 		fmt.Println("    cert           set or show panel certificate paths")
 	}
@@ -342,16 +336,6 @@ func main() {
 			return
 		}
 		runWebServer()
-	case "v2-ui":
-		err := v2uiCmd.Parse(os.Args[2:])
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		err = v2ui.MigrateFromV2UI(dbPath)
-		if err != nil {
-			fmt.Println("migrate from v2-ui failed:", err)
-		}
 	case "setting":
 		err := settingCmd.Parse(os.Args[2:])
 		if err != nil {
@@ -394,11 +378,9 @@ func main() {
 			os.Exit(1)
 		}
 	default:
-		fmt.Println("except 'run', 'v2-ui', 'setting' or 'cert' subcommands")
+		fmt.Println("except 'run', 'setting' or 'cert' subcommands")
 		fmt.Println()
 		runCmd.Usage()
-		fmt.Println()
-		v2uiCmd.Usage()
 		fmt.Println()
 		settingCmd.Usage()
 		fmt.Println()

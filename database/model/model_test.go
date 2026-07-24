@@ -26,6 +26,12 @@ func TestInboundValidateRealityTarget(t *testing.T) {
 	if err := invalid.Validate(); err == nil {
 		t.Fatal("REALITY target without a port was accepted")
 	}
+
+	legacyDest := base
+	legacyDest.StreamSettings = `{"network":"tcp","security":"reality","realitySettings":{"dest":"example.com:443"}}`
+	if err := legacyDest.Validate(); err == nil {
+		t.Fatal("REALITY dest was accepted without target")
+	}
 }
 
 func TestGenXrayInboundConfigStripsPanelOnlyFields(t *testing.T) {
@@ -37,7 +43,7 @@ func TestGenXrayInboundConfigStripsPanelOnlyFields(t *testing.T) {
 		StreamSettings: `{
             "network":"xhttp",
             "security":"reality",
-            "xhttpSettings":{"path":"/","sessionPlacement":"cookie","sessionKey":"sid","xmux":{"maxConnections":6},"scMinPostsIntervalMs":"50-100"},
+            "xhttpSettings":{"path":"/","sessionIDPlacement":"cookie","sessionIDKey":"sid","xmux":{"maxConnections":6},"scMinPostsIntervalMs":"50-100"},
             "realitySettings":{"target":"example.com:443","settings":{"publicKey":"public"}}
         }`,
 		Sniffing: `{"enabled":true}`,
@@ -68,7 +74,7 @@ func TestGenXrayInboundConfigStripsPanelOnlyFields(t *testing.T) {
 		t.Fatal("client-only XHTTP interval leaked into inbound listener settings")
 	}
 	if xhttp["sessionIDPlacement"] != "cookie" || xhttp["sessionIDKey"] != "sid" {
-		t.Fatalf("legacy XHTTP session keys were not migrated: %#v", xhttp)
+		t.Fatalf("current XHTTP session keys were not preserved: %#v", xhttp)
 	}
 	reality := stream["realitySettings"].(map[string]interface{})
 	if _, exists := reality["settings"]; exists {
@@ -91,20 +97,40 @@ func TestSanitizeVMessClientSecurity(t *testing.T) {
 	}
 }
 
-func TestSanitizeLegacyXTLS(t *testing.T) {
-	result := sanitizeInboundStreamSettings(`{"network":"tcp","security":"xtls","xtlsSettings":{"serverName":"example.com"}}`)
-	var parsed map[string]interface{}
-	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
-		t.Fatal(err)
+func TestSanitizersDoNotMigrateLegacyValues(t *testing.T) {
+	cases := []struct {
+		name     string
+		actual   string
+		expected string
+	}{
+		{
+			name:     "XTLS stream settings",
+			actual:   sanitizeInboundStreamSettings(`{"network":"tcp","security":"xtls","xtlsSettings":{"serverName":"example.com"}}`),
+			expected: `{"network":"tcp","security":"xtls","xtlsSettings":{"serverName":"example.com"}}`,
+		},
+		{
+			name:     "XHTTP session fields",
+			actual:   sanitizeInboundStreamSettings(`{"network":"xhttp","xhttpSettings":{"sessionPlacement":"cookie","sessionKey":"sid"}}`),
+			expected: `{"network":"xhttp","xhttpSettings":{"sessionPlacement":"cookie","sessionKey":"sid"}}`,
+		},
+		{
+			name:     "VLESS flow",
+			actual:   sanitizeInboundSettings(VLESS, `{"clients":[{"flow":"xtls-rprx-direct"}]}`),
+			expected: `{"clients":[{"flow":"xtls-rprx-direct"}]}`,
+		},
+		{
+			name:     "Shadowsocks method",
+			actual:   sanitizeInboundSettings(Shadowsocks, `{"method":"plain"}`),
+			expected: `{"method":"plain"}`,
+		},
 	}
-	if parsed["security"] != "tls" {
-		t.Fatalf("legacy XTLS was not migrated to TLS: %#v", parsed)
-	}
-	if _, exists := parsed["xtlsSettings"]; exists {
-		t.Fatal("legacy xtlsSettings remained in runtime config")
-	}
-	if _, exists := parsed["tlsSettings"]; !exists {
-		t.Fatal("legacy xtlsSettings were not moved to tlsSettings")
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if test.actual != test.expected {
+				t.Fatalf("legacy value was changed: got %s, want %s", test.actual, test.expected)
+			}
+		})
 	}
 }
 

@@ -22,15 +22,22 @@ const context = vm.createContext({
 
 vm.runInContext(fs.readFileSync(path.join(root, 'web/assets/js/util/utils.js'), 'utf8'), context);
 const modelSource = fs.readFileSync(path.join(root, 'web/assets/js/model/xray.js'), 'utf8');
-vm.runInContext(`${modelSource}\nglobalThis.__xray = {Inbound, StreamSettings, Protocols, SSMethods, Wireguard};`, context);
+vm.runInContext(`${modelSource}\nglobalThis.__xray = {Inbound, StreamSettings, Sniffing, Protocols, SSMethods, Wireguard};`, context);
 const outboundSource = fs.readFileSync(path.join(root, 'web/assets/js/model/outbound.js'), 'utf8');
 vm.runInContext(`${outboundSource}\nglobalThis.__outbound = {Outbound, OutboundProtocolValues, buildWarpOutbound};`, context);
 const modelsSource = fs.readFileSync(path.join(root, 'web/assets/js/model/models.js'), 'utf8');
 vm.runInContext(`${modelsSource}\nglobalThis.__models = {DBInbound};`, context);
 
-const {Inbound, StreamSettings, Protocols, SSMethods, Wireguard} = context.__xray;
+const {Inbound, StreamSettings, Sniffing, Protocols, SSMethods, Wireguard} = context.__xray;
 const {Outbound, OutboundProtocolValues, buildWarpOutbound} = context.__outbound;
 const {DBInbound} = context.__models;
+
+const defaultSniffing = new Sniffing();
+assert.equal(defaultSniffing.enabled, false);
+assert.deepEqual(Array.from(defaultSniffing.destOverride), ['http', 'tls', 'quic', 'fakedns']);
+const parsedDisabledSniffing = Sniffing.fromJson({enabled: false});
+assert.equal(parsedDisabledSniffing.enabled, false);
+assert.deepEqual(Array.from(parsedDisabledSniffing.destOverride), ['http', 'tls', 'quic', 'fakedns']);
 
 const generatedVmess = new Inbound(443, '', Protocols.VMESS);
 assert.match(generatedVmess.settings.vmesses[0].id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -112,26 +119,44 @@ assert.equal(link.searchParams.get('security'), 'reality');
 assert.equal(link.searchParams.get('encryption'), 'none');
 assert.equal(link.searchParams.get('pbk'), 'public-key');
 assert.equal(link.searchParams.get('sid'), 'abcd');
+assert.equal(link.searchParams.get('sni'), 'example.com');
 
-const legacy = StreamSettings.fromJson({
+const legacyRealitySni = StreamSettings.fromJson({
+    security: 'reality',
+    realitySettings: {
+        serverNames: ['allowed.example'],
+        settings: {serverName: 'legacy.example', spiderX: '/'},
+    },
+});
+assert.deepEqual(Array.from(legacyRealitySni.reality.serverNames), ['legacy.example', 'allowed.example']);
+assert.equal(legacyRealitySni.reality.settings.serverName, '');
+assert.equal(legacyRealitySni.reality.settings.spiderX, '/');
+
+const current = StreamSettings.fromJson({
     method: 'xhttp',
     security: 'reality',
-    xhttpSettings: {sessionPlacement: 'cookie', sessionKey: 'sid'},
-    realitySettings: {dest: 'legacy.example:443', serverNames: 'legacy.example'},
+    xhttpSettings: {sessionIDPlacement: 'cookie', sessionIDKey: 'sid'},
+    realitySettings: {target: 'current.example:443', serverNames: 'current.example'},
 });
-assert.equal(legacy.network, 'xhttp');
-assert.equal(legacy.xhttp.sessionIDPlacement, 'cookie');
-assert.equal(legacy.xhttp.sessionIDKey, 'sid');
-assert.equal(legacy.reality.target, 'legacy.example:443');
-assert.deepEqual(Array.from(legacy.reality.serverNames), ['legacy.example']);
+assert.equal(current.network, 'xhttp');
+assert.equal(current.xhttp.sessionIDPlacement, 'cookie');
+assert.equal(current.xhttp.sessionIDKey, 'sid');
+assert.equal(current.reality.target, 'current.example:443');
+assert.deepEqual(Array.from(current.reality.serverNames), ['current.example']);
+assert.equal(current.reality.settings.spiderX, '/');
 
-const legacyXtls = StreamSettings.fromJson({
-    network: 'tcp',
+const unsupportedLegacy = StreamSettings.fromJson({
+    network: 'xhttp',
     security: 'xtls',
     xtlsSettings: {serverName: 'legacy.example'},
+    xhttpSettings: {sessionPlacement: 'cookie', sessionKey: 'sid'},
+    realitySettings: {dest: 'legacy.example:443'},
 });
-assert.equal(legacyXtls.security, 'tls');
-assert.equal(legacyXtls.tls.server, 'legacy.example');
+assert.equal(unsupportedLegacy.security, 'xtls');
+assert.equal(unsupportedLegacy.tls.server, '');
+assert.equal(unsupportedLegacy.xhttp.sessionIDPlacement, '');
+assert.equal(unsupportedLegacy.xhttp.sessionIDKey, '');
+assert.equal(unsupportedLegacy.reality.target, '');
 
 const tls = StreamSettings.fromJson({
     network: 'ws',
@@ -235,6 +260,9 @@ const hysteria = new Inbound(8443, '', Protocols.HYSTERIA);
 assert.equal(hysteria.stream.network, 'hysteria');
 assert.equal(hysteria.stream.security, 'tls');
 assert.deepEqual(Array.from(hysteria.stream.tls.alpn), ['h3']);
+const hysteriaAlpn = hysteria.stream.tls.alpn;
+hysteria.toJson();
+assert.equal(hysteria.stream.tls.alpn, hysteriaAlpn);
 assert.equal(hysteria.stream.tls.settings.fingerprint, '');
 assert.equal(hysteria.stream.tls.certs.length, 1);
 assert.equal(hysteria.stream.tls.certs[0].useFile, true);
@@ -356,7 +384,9 @@ assert.ok(inboundFormTemplate.includes('{{template "form/tlsSettings"}}'));
 for (const tab of ['basic', 'protocol', 'transport', 'security', 'sniffing', 'advanced']) {
     assert.ok(inboundFormTemplate.includes(`key="${tab}"`));
 }
-assert.ok(inboundFormTemplate.includes('[[ inbound.toString() ]]'));
+assert.ok(inboundFormTemplate.includes('@change="inboundTabChange"'));
+assert.ok(inboundFormTemplate.includes('[[ inModal.inboundJsonPreview ]]'));
+assert.ok(!inboundFormTemplate.includes('[[ inbound.toString() ]]'));
 
 assert.deepEqual(Array.from(OutboundProtocolValues), [
     'vmess', 'vless', 'trojan', 'shadowsocks', 'socks', 'http', 'wireguard',
@@ -458,5 +488,11 @@ const settingTemplate = fs.readFileSync(path.join(root, 'web/html/xui/setting.ht
 assert.ok(settingTemplate.includes('template.outbounds = this.outboundItems'));
 assert.ok(settingTemplate.includes('parseOutboundTemplate()'));
 assert.ok(settingTemplate.includes('JSON 高级编辑'));
+
+const realityTemplate = fs.readFileSync(path.join(root, 'web/html/xui/form/reality_settings.html'), 'utf8');
+assert.ok(realityTemplate.includes('label="SNI"'));
+assert.equal(realityTemplate.includes('REALITY 客户端参数'), false);
+assert.equal(realityTemplate.includes('label="serverName"'), false);
+assert.equal(realityTemplate.includes('regenerateRealitySpiderX'), false);
 
 console.log('xray model serialization tests passed');

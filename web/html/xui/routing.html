@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<style>
+    @media (min-width: 769px) {
+        .ant-layout-content { margin: 24px 16px; }
+    }
+    .routing-toolbar { margin-bottom: 12px; }
+    .routing-value {
+        display: block;
+        max-width: 360px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .routing-attrs-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .routing-attrs-row .ant-input { flex: 1; }
+</style>
+<body>
+<a-layout id="app" v-cloak>
+    {{template "commonSider" .}}
+    <a-layout id="content-layout">
+        <a-layout-content>
+            <a-spin :spinning="spinning" :delay="300" tip='{{ i18n "loading" }}'>
+                <a-space class="routing-toolbar">
+                    <a-button type="primary" icon="save" :disabled="!dirty" @click="saveSettings">保存配置</a-button>
+                    <a-button icon="plus" @click="addRule">添加规则</a-button>
+                </a-space>
+                <a-alert v-if="templateError" type="error" show-icon :message="templateError" style="margin-bottom: 12px"></a-alert>
+                <a-table :columns="columns" :data-source="rules" :pagination="false" :scroll="{x: 1150}"
+                         :row-key="rule => rules.indexOf(rule)" :locale="{emptyText: '没有路由规则'}">
+                    <template slot="enabled" slot-scope="text, rule, index">
+                        <a-switch :checked="rule.enabled !== false" :disabled="isApiRule(rule)"
+                                  @change="value => toggleRule(index, value)"></a-switch>
+                    </template>
+                    <template slot="domain" slot-scope="text, rule">
+                        <span class="routing-value" :title="formatList(rule.domain)">[[ formatList(rule.domain) || '-' ]]</span>
+                    </template>
+                    <template slot="ip" slot-scope="text, rule">
+                        <span class="routing-value" :title="formatList(rule.ip)">[[ formatList(rule.ip) || '-' ]]</span>
+                    </template>
+                    <template slot="inbound" slot-scope="text, rule">
+                        <span class="routing-value" :title="formatList(rule.inboundTag)">[[ formatList(rule.inboundTag) || '-' ]]</span>
+                    </template>
+                    <template slot="target" slot-scope="text, rule">
+                        <a-tag v-if="rule.outboundTag" color="blue">[[ rule.outboundTag ]]</a-tag>
+                        <a-tag v-if="rule.balancerTag" color="purple">[[ rule.balancerTag ]]</a-tag>
+                        <span v-if="!rule.outboundTag && !rule.balancerTag">-</span>
+                    </template>
+                    <template slot="action" slot-scope="text, rule, index">
+                        <a-space>
+                            <a-button size="small" icon="up" :disabled="index === 0" @click="moveRule(index, -1)"></a-button>
+                            <a-button size="small" icon="down" :disabled="index === rules.length - 1" @click="moveRule(index, 1)"></a-button>
+                            <a-button size="small" @click="editRule(index)">编辑</a-button>
+                            <a-popconfirm title="删除这条路由规则？" ok-text="删除" cancel-text="取消" @confirm="deleteRule(index)">
+                                <a-button size="small" type="danger">删除</a-button>
+                            </a-popconfirm>
+                        </a-space>
+                    </template>
+                </a-table>
+            </a-spin>
+        </a-layout-content>
+    </a-layout>
+
+    <a-modal :visible="ruleModal.visible" :width="820" :mask-closable="false"
+             :title="ruleModal.index < 0 ? '添加路由规则' : '编辑路由规则'"
+             ok-text="保存规则" cancel-text="取消" @ok="saveRule" @cancel="closeRuleModal">
+        <a-form-model v-if="editingRule" :label-col="{span: 6}" :wrapper-col="{span: 17}">
+            <a-form-model-item label="启用">
+                <a-switch v-model="editingRule.enabled"></a-switch>
+            </a-form-model-item>
+            <a-form-model-item label="域名">
+                <a-textarea v-model="editingRule.domain" :auto-size="{minRows: 2, maxRows: 5}" placeholder="逗号或换行分隔"></a-textarea>
+            </a-form-model-item>
+            <a-form-model-item label="IP">
+                <a-textarea v-model="editingRule.ip" :auto-size="{minRows: 2, maxRows: 5}" placeholder="逗号或换行分隔"></a-textarea>
+            </a-form-model-item>
+            <a-form-model-item label="端口"><a-input v-model.trim="editingRule.port"></a-input></a-form-model-item>
+            <a-form-model-item label="源端口"><a-input v-model.trim="editingRule.sourcePort"></a-input></a-form-model-item>
+            <a-form-model-item label="网络">
+                <a-select v-model="editingRule.network" allow-clear>
+                    <a-select-option value="tcp">TCP</a-select-option>
+                    <a-select-option value="udp">UDP</a-select-option>
+                    <a-select-option value="tcp,udp">TCP + UDP</a-select-option>
+                </a-select>
+            </a-form-model-item>
+            <a-form-model-item label="协议">
+                <a-select v-model="editingRule.protocol" mode="tags" :token-separators="[',']">
+                    <a-select-option value="http">HTTP</a-select-option>
+                    <a-select-option value="tls">TLS</a-select-option>
+                    <a-select-option value="bittorrent">BitTorrent</a-select-option>
+                    <a-select-option value="quic">QUIC</a-select-option>
+                </a-select>
+            </a-form-model-item>
+            <a-form-model-item label="源 IP">
+                <a-textarea v-model="editingRule.sourceIP" :auto-size="{minRows: 1, maxRows: 4}" placeholder="逗号或换行分隔"></a-textarea>
+            </a-form-model-item>
+            <a-form-model-item label="用户">
+                <a-textarea v-model="editingRule.user" :auto-size="{minRows: 1, maxRows: 4}" placeholder="逗号或换行分隔"></a-textarea>
+            </a-form-model-item>
+            <a-form-model-item label="入站标签">
+                <a-select v-model="editingRule.inboundTag" mode="tags" :token-separators="[',']"></a-select>
+            </a-form-model-item>
+            <a-form-model-item label="VLESS 路由"><a-input v-model.trim="editingRule.vlessRoute"></a-input></a-form-model-item>
+            <a-form-model-item label="属性">
+                <div v-for="(attr, index) in editingRule.attrs" :key="index" class="routing-attrs-row">
+                    <a-input v-model.trim="attr.key" placeholder="键"></a-input>
+                    <a-input v-model="attr.value" placeholder="值"></a-input>
+                    <a-button icon="delete" @click="removeAttr(index)"></a-button>
+                </div>
+                <a-button size="small" icon="plus" @click="addAttr">添加属性</a-button>
+            </a-form-model-item>
+            <a-form-model-item label="出站标签">
+                <a-select v-model="editingRule.outboundTag" show-search allow-clear>
+                    <a-select-option v-for="tag in outboundOptions" :key="tag" :value="tag">[[ tag ]]</a-select-option>
+                </a-select>
+            </a-form-model-item>
+            <a-form-model-item label="负载均衡标签">
+                <a-select v-model="editingRule.balancerTag" show-search allow-clear>
+                    <a-select-option v-for="tag in balancerOptions" :key="tag" :value="tag">[[ tag ]]</a-select-option>
+                </a-select>
+            </a-form-model-item>
+        </a-form-model>
+    </a-modal>
+</a-layout>
+{{template "js" .}}
+<script>
+    const app = new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#app',
+        data: {
+            siderDrawer,
+            spinning: false,
+            allSetting: new AllSetting(),
+            savedTemplate: '',
+            editor: null,
+            rules: [],
+            templateError: '',
+            ruleModal: {visible: false, index: -1},
+            editingRule: null,
+            originalRule: null,
+            columns: [
+                {title: '启用', width: 72, scopedSlots: {customRender: 'enabled'}},
+                {title: '域名', width: 240, scopedSlots: {customRender: 'domain'}},
+                {title: 'IP', width: 210, scopedSlots: {customRender: 'ip'}},
+                {title: '入站', width: 180, scopedSlots: {customRender: 'inbound'}},
+                {title: '目标', width: 150, scopedSlots: {customRender: 'target'}},
+                {title: '操作', width: 260, fixed: 'right', scopedSlots: {customRender: 'action'}},
+            ],
+        },
+        computed: {
+            dirty() { return this.allSetting.xrayTemplateConfig !== this.savedTemplate; },
+            outboundOptions() {
+                const tags = this.editor ? this.editor.outboundTags() : [];
+                if (this.editingRule && this.editingRule.outboundTag) tags.push(this.editingRule.outboundTag);
+                return Array.from(new Set(tags));
+            },
+            balancerOptions() {
+                const tags = this.editor ? this.editor.balancerTags() : [];
+                if (this.editingRule && this.editingRule.balancerTag) tags.push(this.editingRule.balancerTag);
+                return Array.from(new Set(tags));
+            },
+        },
+        methods: {
+            formatList(value) { return Array.isArray(value) ? value.join(', ') : String(value || ''); },
+            isApiRule(rule) { return RoutingRuleModel.isApiRule(rule); },
+            loadEditor() {
+                try {
+                    this.editor = new RoutingRulesEditor(this.allSetting.xrayTemplateConfig);
+                    this.rules = this.editor.rules;
+                    this.templateError = '';
+                } catch (error) {
+                    this.editor = null;
+                    this.rules = [];
+                    this.templateError = '无法读取路由规则：' + error.message;
+                }
+            },
+            writeRules() {
+                if (!this.editor) return;
+                this.allSetting.xrayTemplateConfig = this.editor.serialize();
+            },
+            async getSettings() {
+                this.spinning = true;
+                const msg = await HttpUtil.post('/xui/setting/all');
+                this.spinning = false;
+                if (!msg.success) return;
+                this.allSetting = new AllSetting(msg.obj);
+                this.savedTemplate = this.allSetting.xrayTemplateConfig;
+                this.loadEditor();
+            },
+            addRule() {
+                if (!this.editor) return;
+                this.ruleModal = {visible: true, index: -1};
+                this.originalRule = {};
+                this.editingRule = RoutingRuleModel.toForm({enabled: true});
+            },
+            editRule(index) {
+                this.ruleModal = {visible: true, index};
+                this.originalRule = JSON.parse(JSON.stringify(this.rules[index]));
+                this.editingRule = RoutingRuleModel.toForm(this.originalRule);
+            },
+            closeRuleModal() {
+                this.ruleModal.visible = false;
+                this.editingRule = null;
+                this.originalRule = null;
+            },
+            addAttr() { this.editingRule.attrs.push({key: '', value: ''}); },
+            removeAttr(index) { this.editingRule.attrs.splice(index, 1); },
+            saveRule() {
+                const rule = RoutingRuleModel.fromForm(this.editingRule, this.originalRule);
+                if (!RoutingRuleModel.hasMatcher(rule)) {
+                    this.$message.error('路由规则至少需要一个匹配条件。');
+                    return;
+                }
+                if (this.ruleModal.index < 0) this.rules.push(rule);
+                else this.rules.splice(this.ruleModal.index, 1, rule);
+                this.writeRules();
+                this.closeRuleModal();
+            },
+            toggleRule(index, enabled) {
+                this.$set(this.rules[index], 'enabled', enabled);
+                this.writeRules();
+            },
+            moveRule(index, delta) {
+                const target = index + delta;
+                if (target < 0 || target >= this.rules.length) return;
+                const rule = this.rules.splice(index, 1)[0];
+                this.rules.splice(target, 0, rule);
+                this.writeRules();
+            },
+            deleteRule(index) {
+                this.rules.splice(index, 1);
+                this.writeRules();
+            },
+            async saveSettings() {
+                this.spinning = true;
+                const msg = await HttpUtil.post('/xui/setting/update', this.allSetting);
+                this.spinning = false;
+                if (msg.success) await this.getSettings();
+            },
+        },
+        async mounted() { await this.getSettings(); },
+    });
+</script>
+</body>
+</html>

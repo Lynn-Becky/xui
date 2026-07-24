@@ -7,24 +7,36 @@
     <a-icon type="user"></a-icon>
     <span>{{ i18n "menu.inbounds"}}</span>
 </a-menu-item>
-<a-menu-item key="{{ .base_path }}xui/setting">
-    <a-icon type="setting"></a-icon>
-    <span>{{ i18n "menu.settings"}}</span>
+<a-menu-item key="{{ .base_path }}xui/outbounds">
+    <a-icon type="export"></a-icon>
+    <span>{{ i18n "menu.outbounds"}}</span>
 </a-menu-item>
+<a-menu-item key="{{ .base_path }}xui/routing">
+    <a-icon type="branches"></a-icon>
+    <span>{{ i18n "menu.routing"}}</span>
+</a-menu-item>
+<a-menu-item key="{{ .base_path }}xui/xray">
+    <a-icon type="code"></a-icon>
+    <span>{{ i18n "menu.xray"}}</span>
+</a-menu-item>
+<a-sub-menu>
+    <template slot="title">
+        <a-icon type="tool"></a-icon>
+        <span>{{ i18n "menu.link"}}</span>
+    </template>
+    <a-menu-item key="{{ .base_path }}xui/setting">
+        <a-icon type="setting"></a-icon>
+        <span>{{ i18n "menu.settings"}}</span>
+    </a-menu-item>
+    <a-menu-item key="{{ .base_path }}xui/backup">
+        <a-icon type="database"></a-icon>
+        <span>{{ i18n "backup"}}</span>
+    </a-menu-item>
+</a-sub-menu>
 <!--<a-menu-item key="{{ .base_path }}xui/clients">-->
 <!--    <a-icon type="laptop"></a-icon>-->
 <!--    <span>客户端</span>-->
 <!--</a-menu-item>-->
-<a-sub-menu>
-    <template slot="title">
-        <a-icon type="link"></a-icon>
-        <span>{{ i18n "menu.link"}}</span>
-    </template>
-    <a-menu-item key="https://github.com/vaxilu/x-ui/">
-        <a-icon type="github"></a-icon>
-        <span>Github</span>
-    </a-menu-item>
-</a-sub-menu>
 <a-menu-item key="{{ .base_path }}logout">
     <a-icon type="logout"></a-icon>
     <span>{{ i18n "menu.logout"}}</span>

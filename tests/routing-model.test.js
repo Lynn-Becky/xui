@@ -1,0 +1,53 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const root = path.resolve(__dirname, '..');
+const context = vm.createContext({console});
+const source = fs.readFileSync(path.join(root, 'web/assets/js/model/routing.js'), 'utf8');
+vm.runInContext(`${source}\nglobalThis.__routing = {RoutingRuleModel, RoutingRulesEditor};`, context);
+
+const {RoutingRuleModel, RoutingRulesEditor} = context.__routing;
+const editor = new RoutingRulesEditor(JSON.stringify({
+    outbounds: [{tag: 'direct'}, {tag: 'blocked'}],
+    routing: {
+        balancers: [{tag: 'auto'}],
+        rules: [{
+            type: 'field',
+            enabled: true,
+            domain: ['geosite:cn'],
+            inboundTag: ['in-1'],
+            outboundTag: 'direct',
+            ruleTag: 'preserve-me',
+        }],
+    },
+}));
+
+assert.deepEqual(Array.from(editor.outboundTags()), ['direct', 'blocked']);
+assert.deepEqual(Array.from(editor.balancerTags()), ['auto']);
+
+const original = editor.rules[0];
+const form = RoutingRuleModel.toForm(original);
+form.domain = 'geosite:private,\nregexp:^example\\.com$';
+form.protocol = ['http', 'tls'];
+form.attrs = [{key: ':method', value: 'GET'}];
+const updated = RoutingRuleModel.fromForm(form, original);
+
+assert.deepEqual(Array.from(updated.domain), ['geosite:private', 'regexp:^example\\.com$']);
+assert.deepEqual(Array.from(updated.protocol), ['http', 'tls']);
+assert.equal(updated.attrs[':method'], 'GET');
+assert.equal(updated.ruleTag, 'preserve-me');
+assert.equal(updated.type, 'field');
+assert.equal(RoutingRuleModel.hasMatcher(updated), true);
+assert.equal(RoutingRuleModel.isApiRule({outboundTag: 'api', inboundTag: ['api']}), true);
+
+editor.rules.splice(0, 1, updated);
+const serialized = JSON.parse(editor.serialize());
+assert.equal(serialized.routing.rules[0].ruleTag, 'preserve-me');
+assert.equal('importRules' in RoutingRulesEditor.prototype, false);
+assert.equal('exportRules' in RoutingRulesEditor.prototype, false);
+
+console.log('routing model tests passed');

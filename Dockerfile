@@ -5,7 +5,7 @@ RUN go build main.go
 
 FROM alpine:3.22 AS xray
 ARG TARGETARCH=amd64
-ARG XRAY_VERSION=v26.7.11
+ARG XRAY_VERSION=v26.6.27
 RUN apk add --no-cache curl unzip \
     && case "${TARGETARCH}" in \
          amd64) archive="Xray-linux-64.zip" ;; \

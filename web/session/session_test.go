@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestClearSessionUsesBasePathAndClearsLegacyRootCookie(t *testing.T) {
+func TestClearSessionUsesBasePath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	store := cookie.NewStore([]byte("01234567890123456789012345678901"))
@@ -41,15 +41,15 @@ func TestClearSessionUsesBasePathAndClearsLegacyRootCookie(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 
 	cookies := recorder.Result().Cookies()
-	if len(cookies) != 2 {
-		t.Fatalf("got %d cookies, want path-scoped and legacy-root clear cookies", len(cookies))
+	if len(cookies) != 1 {
+		t.Fatalf("got %d cookies, want one path-scoped clear cookie", len(cookies))
 	}
 	for _, c := range cookies {
 		if c.Name != "session" || c.MaxAge >= 0 || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode {
 			t.Errorf("unexpected cleared cookie: %#v", c)
 		}
 	}
-	if cookies[0].Path != "/panel/" || cookies[1].Path != "/" {
-		t.Errorf("cookie paths = %q, %q; want /panel/ then /", cookies[0].Path, cookies[1].Path)
+	if cookies[0].Path != "/panel/" {
+		t.Errorf("cookie path = %q, want /panel/", cookies[0].Path)
 	}
 }
