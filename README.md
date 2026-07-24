@@ -27,7 +27,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/main/install.
 
 > 如果你的服务器 cpu 架构不是 `amd64`，自行将命令中的 `amd64`替换为其他架构
 >
-> Alpine Linux 请使用 `x-ui-linux-amd64-alpine.tar.gz` 或 `x-ui-linux-arm64-alpine.tar.gz`。该产物使用 Go 1.26.5 在 Alpine 3.22 的 musl 环境中编译，不依赖 `glibc/gcompat`，并移除了调试符号以减小体积。
+> Alpine Linux 请使用 `x-ui-linux-amd64-alpine.tar.gz` 或 `x-ui-linux-arm64-alpine.tar.gz`。该产物使用 Go 1.26.5 在 Alpine 3.23 的 musl 环境中编译，不依赖 `glibc/gcompat`，并移除了调试符号以减小体积。
 
 ```
 cd /root/
@@ -123,7 +123,7 @@ TG通知内容：
 - CentOS 7+
 - Ubuntu 16+
 - Debian 8+
-- Alpine 3.22+
+- Alpine 3.23+
 
 # 常见问题
 

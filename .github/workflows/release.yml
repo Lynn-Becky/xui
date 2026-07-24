@@ -133,14 +133,14 @@ jobs:
           $workspace = (Get-Location).Path
           $platform = 'linux/${{ matrix.arch }}'
           $buildCommand = "apk add --no-cache build-base && CGO_ENABLED=1 CGO_CFLAGS='-D_LARGEFILE64_SOURCE -D_GNU_SOURCE' GOOS=linux GOARCH=${{ matrix.arch }} go build -pgo=default.pgo -trimpath -ldflags='-s -w -buildid=' -o /src/xui-alpine ."
-          docker run --rm --platform $platform --volume "${workspace}:/src" --workdir /src golang:${{ env.GO_VERSION }}-alpine3.22 /bin/sh -ec $buildCommand
+          docker run --rm --platform $platform --volume "${workspace}:/src" --workdir /src golang:${{ env.GO_VERSION }}-alpine3.23 /bin/sh -ec $buildCommand
           if ($LASTEXITCODE -ne 0) { throw 'Alpine x-ui build failed.' }
       - name: Verify binary on Alpine
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $workspace = (Get-Location).Path
-          docker run --rm --platform 'linux/${{ matrix.arch }}' --volume "${workspace}:/src:ro" alpine:3.22 /src/xui-alpine -v
+          docker run --rm --platform 'linux/${{ matrix.arch }}' --volume "${workspace}:/src:ro" alpine:3.23 /src/xui-alpine -v
           if ($LASTEXITCODE -ne 0) { throw 'Alpine x-ui runtime verification failed.' }
       - name: Package Alpine release
         shell: pwsh
