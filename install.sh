@@ -64,7 +64,6 @@ install_base() {
     case "$release" in
         alpine)
             apk add --no-cache bash dcron curl wget tar tzdata socat ca-certificates openssl openrc
-            apk add --no-cache gcompat >/dev/null 2>&1 || true
             ;;
         centos|rhel|rocky|almalinux|ol|fedora|amzn|amazon)
             if command -v dnf >/dev/null 2>&1; then
@@ -238,10 +237,12 @@ tag_version=""
 
 download_release() {
     local version="$1"
-    local archive="${XUI_FOLDER}-linux-${arch}.tar.gz"
+    local asset_suffix=""
+    [[ "$release" == alpine ]] && asset_suffix="-alpine"
+    local archive="${XUI_FOLDER}-linux-${arch}${asset_suffix}.tar.gz"
     local url
     if [[ -n "$version" ]]; then
-        url="https://github.com/${XUI_REPO}/releases/download/${version}/x-ui-linux-${arch}.tar.gz"
+        url="https://github.com/${XUI_REPO}/releases/download/${version}/x-ui-linux-${arch}${asset_suffix}.tar.gz"
         echo "开始安装 x-ui ${version}"
     else
         # The repository also publishes prereleases, which /releases/latest
@@ -249,7 +250,7 @@ download_release() {
         version="$(curl -fsSL --retry 3 "https://api.github.com/repos/${XUI_REPO}/releases?per_page=1" \
             | sed -n 's/.*\"tag_name\": \"\([^\"]*\)\".*/\1/p' | head -n 1 || true)"
         [[ -n "$version" ]] || { error "检测 x-ui 最新版本失败，请稍后重试或手动指定版本。"; exit 1; }
-        url="https://github.com/${XUI_REPO}/releases/download/${version}/x-ui-linux-${arch}.tar.gz"
+        url="https://github.com/${XUI_REPO}/releases/download/${version}/x-ui-linux-${arch}${asset_suffix}.tar.gz"
         echo "检测到 x-ui 最新版本：${version}，开始安装"
     fi
     curl -fL --retry 3 --connect-timeout 15 -o "$archive" "$url" || {
@@ -306,10 +307,12 @@ configure_tls_after_install() {
 
 install_x_ui() {
     local requested_version="${1:-}"
+    local archive_suffix=""
+    [[ "$release" == alpine ]] && archive_suffix="-alpine"
     local archive script_url script_temp
     service_stop
     download_release "$requested_version"
-    archive="${XUI_FOLDER}-linux-${arch}.tar.gz"
+    archive="${XUI_FOLDER}-linux-${arch}${archive_suffix}.tar.gz"
 
     rm -rf "$XUI_FOLDER"
     tar -xzf "$archive" -C "$(dirname "$XUI_FOLDER")" || { rm -f "$archive"; error "解压 x-ui 安装包失败。"; exit 1; }

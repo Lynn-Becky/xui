@@ -26,6 +26,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/main/install.
 2. 然后将这个压缩包上传到服务器的 `/root/`目录下，并使用 `root`用户登录服务器
 
 > 如果你的服务器 cpu 架构不是 `amd64`，自行将命令中的 `amd64`替换为其他架构
+>
+> Alpine Linux 请使用 `x-ui-linux-amd64-alpine.tar.gz` 或 `x-ui-linux-arm64-alpine.tar.gz`。该产物在 Alpine 3.17 的 musl 环境中编译，不依赖 `glibc/gcompat`，并移除了调试符号以减小体积。
 
 ```
 cd /root/
@@ -121,6 +123,7 @@ TG通知内容：
 - CentOS 7+
 - Ubuntu 16+
 - Debian 8+
+- Alpine 3.17+
 
 # 常见问题
 

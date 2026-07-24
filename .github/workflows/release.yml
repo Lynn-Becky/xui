@@ -110,6 +110,55 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: gh release upload "$RELEASE_TAG" x-ui-linux-arm64.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+  linuxalpinebuild:
+    name: build x-ui Alpine ${{ matrix.arch }} version
+    needs: [release, linuxamd64build, linuxarm64build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Build musl binary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = (Get-Location).Path
+          $platform = 'linux/${{ matrix.arch }}'
+          $buildCommand = "apk add --no-cache build-base && CGO_ENABLED=1 GOOS=linux GOARCH=${{ matrix.arch }} go build -trimpath -ldflags='-s -w -buildid=' -o /src/xui-alpine main.go"
+          docker run --rm --platform $platform --volume "${workspace}:/src" --workdir /src golang:1.18-alpine3.17 /bin/sh -ec $buildCommand
+          if ($LASTEXITCODE -ne 0) { throw 'Alpine x-ui build failed.' }
+      - name: Verify binary on Alpine
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = (Get-Location).Path
+          docker run --rm --platform 'linux/${{ matrix.arch }}' --volume "${workspace}:/src:ro" alpine:3.17 /src/xui-alpine -v
+          if ($LASTEXITCODE -ne 0) { throw 'Alpine x-ui runtime verification failed.' }
+      - name: Package Alpine release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $baseArchive = 'x-ui-linux-${{ matrix.arch }}.tar.gz'
+          $alpineArchive = 'x-ui-linux-${{ matrix.arch }}-alpine.tar.gz'
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $baseArchive
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download $baseArchive." }
+          tar -xzf $baseArchive
+          if ($LASTEXITCODE -ne 0) { throw "Failed to extract $baseArchive." }
+          Copy-Item -LiteralPath 'xui-alpine' -Destination 'x-ui/x-ui' -Force
+          tar -czf $alpineArchive x-ui
+          if ($LASTEXITCODE -ne 0) { throw "Failed to create $alpineArchive." }
+          gh release upload $env:RELEASE_TAG $alpineArchive --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload $alpineArchive." }
   linuxs390xbuild:
     name: build x-ui s390x version
     needs: release
