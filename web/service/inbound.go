@@ -14,6 +14,10 @@ import (
 type InboundService struct {
 }
 
+func inboundTag(port int) string {
+	return fmt.Sprintf("inbound-%d", port)
+}
+
 func (s *InboundService) GetInbounds(userId int) ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
@@ -59,6 +63,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) error {
 	if exist {
 		return common.NewError("端口已存在:", inbound.Port)
 	}
+	inbound.Tag = inboundTag(inbound.Port)
 	db := database.GetDB()
 	return db.Save(inbound).Error
 }
@@ -75,6 +80,7 @@ func (s *InboundService) AddInbounds(inbounds []*model.Inbound) error {
 		if exist {
 			return common.NewError("端口已存在:", inbound.Port)
 		}
+		inbound.Tag = inboundTag(inbound.Port)
 	}
 
 	db := database.GetDB()
@@ -141,7 +147,7 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
 	oldInbound.Settings = inbound.Settings
 	oldInbound.StreamSettings = inbound.StreamSettings
 	oldInbound.Sniffing = inbound.Sniffing
-	oldInbound.Tag = fmt.Sprintf("inbound-%v", inbound.Port)
+	oldInbound.Tag = inboundTag(inbound.Port)
 
 	db := database.GetDB()
 	return db.Save(oldInbound).Error
