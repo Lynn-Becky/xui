@@ -1,7 +1,9 @@
 {{define "form/vmess"}}
 <a-form layout="inline">
     <a-form-item label="id">
-        <a-input v-model.trim="inbound.settings.vmesses[0].id"></a-input>
+        <a-input v-model.trim="inbound.settings.vmesses[0].id">
+            <template slot="addonAfter"><a-button icon="reload" title="重新生成 UUID" @click="inbound.settings.vmesses[0].id = RandomUtil.randomUUID()"></a-button></template>
+        </a-input>
     </a-form-item>
     <a-form-item label="额外 ID">
         <a-input type="number" v-model.number="inbound.settings.vmesses[0].alterId"></a-input>
@@ -16,7 +18,9 @@
         </a-select>
     </a-form-item>
     <a-form-item label="email">
-        <a-input v-model.trim="inbound.settings.vmesses[0].email"></a-input>
+        <a-input v-model.trim="inbound.settings.vmesses[0].email">
+            <template slot="addonAfter"><a-button icon="reload" title="重新生成 email" @click="regenerateEmail(inbound.settings.vmesses[0])"></a-button></template>
+        </a-input>
     </a-form-item>
     <a-form-item label="禁用不安全加密">
         <a-switch v-model.number="inbound.settings.disableInsecure"></a-switch>

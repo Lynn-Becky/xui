@@ -32,6 +32,41 @@ const {Inbound, StreamSettings, Protocols, SSMethods, Wireguard} = context.__xra
 const {Outbound, OutboundProtocolValues, buildWarpOutbound} = context.__outbound;
 const {DBInbound} = context.__models;
 
+const generatedVmess = new Inbound(443, '', Protocols.VMESS);
+assert.match(generatedVmess.settings.vmesses[0].id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+assert.match(generatedVmess.settings.vmesses[0].email, /^[a-z0-9]{10}$/);
+
+const generatedVless = new Inbound(443, '', Protocols.VLESS);
+assert.match(generatedVless.settings.vlesses[0].id, /^[0-9a-f-]{36}$/);
+assert.match(generatedVless.settings.vlesses[0].email, /^[a-z0-9]{10}$/);
+
+const generatedTrojan = new Inbound(443, '', Protocols.TROJAN);
+assert.equal(generatedTrojan.settings.clients[0].password.length, 10);
+assert.match(generatedTrojan.settings.clients[0].email, /^[a-z0-9]{10}$/);
+
+const generatedMixed = new Inbound(443, '', Protocols.MIXED);
+assert.match(generatedMixed.settings.accounts[0].user, /^[a-z0-9]{8}$/);
+assert.match(generatedMixed.settings.accounts[0].pass, /^[a-z0-9]{12}$/);
+
+const generatedHttp = new Inbound(443, '', Protocols.HTTP);
+assert.match(generatedHttp.settings.accounts[0].user, /^[a-z0-9]{8}$/);
+assert.match(generatedHttp.settings.accounts[0].pass, /^[a-z0-9]{12}$/);
+
+const generatedShadowsocks = new Inbound(443, '', Protocols.SHADOWSOCKS);
+generatedShadowsocks.settings.addClient();
+assert.match(generatedShadowsocks.settings.clients[0].email, /^[a-z0-9]{10}$/);
+assert.equal(generatedShadowsocks.settings.clients[0].password.length, 43);
+
+const generatedHysteria = new Inbound(443, '', Protocols.HYSTERIA);
+generatedHysteria.settings.addClient();
+assert.match(generatedHysteria.settings.clients[0].auth, /^[a-z0-9]{16}$/);
+assert.match(generatedHysteria.settings.clients[0].email, /^[a-z0-9]{10}$/);
+
+const generatedWireguard = new Inbound(443, '', Protocols.WIREGUARD);
+generatedWireguard.settings.addClient();
+assert.match(generatedWireguard.settings.clients[0].email, /^[a-z0-9]{10}$/);
+assert.equal(generatedWireguard.settings.clients[0].privateKey.length, 44);
+
 const inbound = new Inbound(443, '', Protocols.VLESS);
 inbound.stream.network = 'xhttp';
 inbound.stream.security = 'reality';
@@ -290,7 +325,7 @@ const hysteriaDB = new DBInbound({
     streamSettings: hysteria.stream.toString(), sniffing: '{}', remark: 'hy2', listen: '203.0.113.1',
 });
 assert.equal(hysteriaDB.hasLink(), true);
-assert.equal(hysteriaDB.shareEntries()[0].label, '客户端 1');
+assert.equal(hysteriaDB.shareEntries()[0].label, hysteria.settings.clients[0].email);
 const wireguardDB = new DBInbound({
     port: wireguardShare.port, protocol: Protocols.WIREGUARD, settings: wireguardShare.settings.toString(),
     streamSettings: '{}', sniffing: '{}', remark: 'wg', listen: '203.0.113.2',
@@ -318,6 +353,10 @@ assert.equal(
 const inboundFormTemplate = fs.readFileSync(path.join(root, 'web/html/xui/form/inbound.html'), 'utf8');
 assert.ok(inboundFormTemplate.includes('{{template "form/hysteriaStream"}}'));
 assert.ok(inboundFormTemplate.includes('{{template "form/tlsSettings"}}'));
+for (const tab of ['basic', 'protocol', 'transport', 'security', 'sniffing', 'advanced']) {
+    assert.ok(inboundFormTemplate.includes(`key="${tab}"`));
+}
+assert.ok(inboundFormTemplate.includes('[[ inbound.toString() ]]'));
 
 assert.deepEqual(Array.from(OutboundProtocolValues), [
     'vmess', 'vless', 'trojan', 'shadowsocks', 'socks', 'http', 'wireguard',

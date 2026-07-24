@@ -1,10 +1,14 @@
 {{define "form/vless"}}
 <a-form layout="inline">
     <a-form-item label="id">
-        <a-input v-model.trim="inbound.settings.vlesses[0].id"></a-input>
+        <a-input v-model.trim="inbound.settings.vlesses[0].id">
+            <template slot="addonAfter"><a-button icon="reload" title="重新生成 UUID" @click="inbound.settings.vlesses[0].id = RandomUtil.randomUUID()"></a-button></template>
+        </a-input>
     </a-form-item>
     <a-form-item label="email">
-        <a-input v-model.trim="inbound.settings.vlesses[0].email"></a-input>
+        <a-input v-model.trim="inbound.settings.vlesses[0].email">
+            <template slot="addonAfter"><a-button icon="reload" title="重新生成 email" @click="regenerateEmail(inbound.settings.vlesses[0])"></a-button></template>
+        </a-input>
     </a-form-item>
     <a-form-item v-if="inbound.canEnableTlsFlow()" label="flow">
         <a-select v-model="inbound.settings.vlesses[0].flow" style="width: 220px">

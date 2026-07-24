@@ -1,7 +1,7 @@
 {{define "inboundModal"}}
-<a-modal id="inbound-modal" v-model="inModal.visible" :title="inModal.title" @ok="inModal.ok"
+<a-modal id="inbound-modal" class="inbound-modal" v-model="inModal.visible" :title="inModal.title" @ok="inModal.ok"
          :confirm-loading="inModal.confirmLoading" :closable="true" :mask-closable="false"
-         :ok-text="inModal.okText" cancel-text='{{ i18n "close" }}'>
+         :width="780" :ok-text="inModal.okText" cancel-text='{{ i18n "close" }}'>
     {{template "form/inbound"}}
 </a-modal>
 <script>
@@ -11,6 +11,7 @@
         visible: false,
         confirmLoading: false,
         okText: '确定',
+        activeTab: 'basic',
         confirm: null,
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
@@ -31,6 +32,7 @@
                 this.dbInbound = new DBInbound();
             }
             this.confirm = confirm;
+            this.activeTab = 'basic';
             this.visible = true;
         },
         close() {
@@ -90,6 +92,31 @@
             clearVlessEncryption() {
                 this.inbound.settings.decryption = 'none';
                 this.inbound.settings.encryption = 'none';
+            },
+            regeneratePort() {
+                this.inbound.port = RandomUtil.randomIntRange(10000, 60000);
+            },
+            regenerateEmail(target) {
+                target.email = RandomUtil.randomLowerAndNum(12);
+            },
+            regenerateRealityShortIds() {
+                this.inbound.stream.reality.shortIds = RandomUtil.randomShortIds();
+            },
+            regenerateRealitySpiderX() {
+                this.inbound.stream.reality.settings.spiderX = `/${RandomUtil.randomSeq(15)}`;
+            },
+            async streamSecurityChange(security) {
+                if (security !== 'reality') return;
+                const reality = this.inbound.stream.reality;
+                if (!Array.isArray(reality.shortIds) || reality.shortIds.length === 0) {
+                    this.regenerateRealityShortIds();
+                }
+                if (!reality.settings.spiderX || reality.settings.spiderX === '/') {
+                    this.regenerateRealitySpiderX();
+                }
+                if (!reality.privateKey || !reality.settings.publicKey) {
+                    await this.generateRealityKeyPair();
+                }
             },
             async generateRealityKeyPair() {
                 const msg = await HttpUtil.post('/server/getNewX25519Cert');

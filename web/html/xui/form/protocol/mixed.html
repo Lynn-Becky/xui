@@ -13,8 +13,16 @@
 </a-form>
 <template v-if="inbound.settings.auth === 'password'">
     <a-form layout="inline" v-for="(account, index) in inbound.settings.accounts" :key="index">
-        <a-form-item :label="'用户名 ' + (index + 1)"><a-input v-model.trim="account.user"></a-input></a-form-item>
-        <a-form-item label="密码"><a-input v-model.trim="account.pass"></a-input></a-form-item>
+        <a-form-item :label="'用户名 ' + (index + 1)">
+            <a-input v-model.trim="account.user">
+                <template slot="addonAfter"><a-button icon="reload" title="重新生成用户名" @click="account.user = RandomUtil.randomLowerAndNum(8)"></a-button></template>
+            </a-input>
+        </a-form-item>
+        <a-form-item label="密码">
+            <a-input v-model.trim="account.pass">
+                <template slot="addonAfter"><a-button icon="reload" title="重新生成密码" @click="account.pass = RandomUtil.randomLowerAndNum(12)"></a-button></template>
+            </a-input>
+        </a-form-item>
         <a-form-item><a-button type="danger" size="small" @click="inbound.settings.delAccount(index)">删除</a-button></a-form-item>
     </a-form>
     <a-button size="small" @click="inbound.settings.addAccount()">添加账户</a-button>

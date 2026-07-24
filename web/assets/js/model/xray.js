@@ -1747,7 +1747,7 @@ Inbound.VmessSettings = class extends Inbound.Settings {
     }
 };
 Inbound.VmessSettings.Vmess = class extends XrayCommonClass {
-    constructor(id=RandomUtil.randomUUID(), alterId=0, security='auto', email='') {
+    constructor(id=RandomUtil.randomUUID(), alterId=0, security='auto', email=RandomUtil.randomLowerAndNum(10)) {
         super();
         this.id = id;
         this.alterId = alterId;
@@ -1822,7 +1822,7 @@ Inbound.VLESSSettings = class extends Inbound.Settings {
 };
 Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
 
-    constructor(id=RandomUtil.randomUUID(), flow='', email='') {
+    constructor(id=RandomUtil.randomUUID(), flow='', email=RandomUtil.randomLowerAndNum(10)) {
         super();
         this.id = id;
         this.flow = flow;
@@ -1917,7 +1917,7 @@ Inbound.TrojanSettings = class extends Inbound.Settings {
     }
 };
 Inbound.TrojanSettings.Client = class extends XrayCommonClass {
-    constructor(password=RandomUtil.randomSeq(10), flow='', email='') {
+    constructor(password=RandomUtil.randomSeq(10), flow='', email=RandomUtil.randomLowerAndNum(10)) {
         super();
         this.password = password;
         this.flow = flow;
@@ -2025,7 +2025,10 @@ Inbound.ShadowsocksSettings = class extends Inbound.Settings {
     }
 
     addClient() {
-        this.clients.push(new Inbound.ShadowsocksSettings.Client('', RandomUtil.randomShadowsocksPassword(this.method)));
+        this.clients.push(new Inbound.ShadowsocksSettings.Client(
+            RandomUtil.randomLowerAndNum(10),
+            RandomUtil.randomShadowsocksPassword(this.method),
+        ));
     }
 
     delClient(index) {
@@ -2034,7 +2037,7 @@ Inbound.ShadowsocksSettings = class extends Inbound.Settings {
 };
 
 Inbound.ShadowsocksSettings.Client = class extends XrayCommonClass {
-    constructor(email='', password='', method='') {
+    constructor(email=RandomUtil.randomLowerAndNum(10), password='', method='') {
         super();
         this.email = email;
         this.password = password;
@@ -2081,7 +2084,7 @@ Inbound.MixedSettings = class extends Inbound.Settings {
     }
 };
 Inbound.MixedSettings.Account = class extends XrayCommonClass {
-    constructor(user=RandomUtil.randomSeq(8), pass=RandomUtil.randomSeq(12)) {
+    constructor(user=RandomUtil.randomLowerAndNum(8), pass=RandomUtil.randomLowerAndNum(12)) {
         super();
         this.user = user;
         this.pass = pass;
@@ -2199,7 +2202,7 @@ Inbound.WireguardSettings = class extends Inbound.Settings {
     }
 };
 Inbound.WireguardSettings.Client = class extends XrayCommonClass {
-    constructor(privateKey='', publicKey='', preSharedKey='', allowedIPs=[], keepAlive=0, email='', enable=true) {
+    constructor(privateKey='', publicKey='', preSharedKey='', allowedIPs=[], keepAlive=0, email=RandomUtil.randomLowerAndNum(10), enable=true) {
         super();
         const keypair = privateKey ? null : Wireguard.generateKeypair();
         this.privateKey = privateKey || keypair.privateKey;
@@ -2259,14 +2262,14 @@ Inbound.HysteriaSettings = class extends Inbound.Settings {
     }
 };
 Inbound.HysteriaSettings.Client = class extends XrayCommonClass {
-    constructor(auth=RandomUtil.randomSeq(10), email='') {
+    constructor(auth=RandomUtil.randomLowerAndNum(16), email=RandomUtil.randomLowerAndNum(10)) {
         super();
         this.auth = auth;
         this.email = email;
     }
 
     static fromJson(json={}) {
-        return new Inbound.HysteriaSettings.Client(json.auth || RandomUtil.randomSeq(10), json.email || '');
+        return new Inbound.HysteriaSettings.Client(json.auth || RandomUtil.randomLowerAndNum(16), json.email || '');
     }
 
     toJson() {
@@ -2308,7 +2311,7 @@ Inbound.HttpSettings = class extends Inbound.Settings {
 };
 
 Inbound.HttpSettings.HttpAccount = class extends XrayCommonClass {
-    constructor(user=RandomUtil.randomSeq(10), pass=RandomUtil.randomSeq(10)) {
+    constructor(user=RandomUtil.randomLowerAndNum(8), pass=RandomUtil.randomLowerAndNum(12)) {
         super();
         this.user = user;
         this.pass = pass;

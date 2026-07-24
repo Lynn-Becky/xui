@@ -26,13 +26,40 @@
 
     .outbound-list {
         background: white;
-        min-width: 720px;
     }
 
     .outbound-list .ant-list-item {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
+        gap: 8px 12px;
         padding: 12px 18px;
+    }
+
+    .outbound-summary {
+        flex: 1 1 240px;
+        min-width: 0;
+    }
+
+    .outbound-tag {
+        display: inline-block;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: bottom;
+        white-space: nowrap;
+    }
+
+    .outbound-actions {
+        flex: 0 0 auto;
+        margin-left: auto;
+        width: auto;
+    }
+
+    @media (max-width: 576px) {
+        .outbound-actions {
+            margin-left: 0;
+        }
     }
 
     .outbound-modal-section {
@@ -107,12 +134,12 @@
                                     </a-space>
                                     <a-list class="outbound-list" :data-source="outboundItems" :locale="{emptyText: '模版中没有出站'}">
                                         <a-list-item slot="renderItem" slot-scope="outbound, index">
-                                            <a-space style="flex: 1">
+                                            <a-space class="outbound-summary">
                                                 <a-tag :color="index === 0 ? 'green' : 'blue'">[[ index === 0 ? '默认' : index + 1 ]]</a-tag>
                                                 <strong>[[ outbound.protocol ]]</strong>
-                                                <span>[[ outbound.tag || '未设置标签' ]]</span>
+                                                <span class="outbound-tag">[[ outbound.tag || '未设置标签' ]]</span>
                                             </a-space>
-                                            <a-space>
+                                            <a-space class="outbound-actions">
                                                 <a-button size="small" icon="up" :disabled="index === 0" @click="moveOutbound(index, -1)"></a-button>
                                                 <a-button size="small" icon="down" :disabled="index === outboundItems.length - 1" @click="moveOutbound(index, 1)"></a-button>
                                                 <a-button size="small" @click="editOutbound(index)">编辑</a-button>

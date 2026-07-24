@@ -1,7 +1,7 @@
 {{define "form/tlsSettings"}}
 <a-form layout="inline" v-if="inbound.canEnableTls() || inbound.canEnableReality()">
     <a-form-item v-if="inbound.protocol !== Protocols.HYSTERIA" label="安全">
-        <a-select v-model="inbound.stream.security" style="width: 140px">
+        <a-select v-model="inbound.stream.security" style="width: 140px" @change="streamSecurityChange">
             <a-select-option value="none">none</a-select-option>
             <a-select-option v-if="inbound.canEnableTls()" value="tls">tls</a-select-option>
             <a-select-option v-if="inbound.canEnableReality()" value="reality">reality</a-select-option>

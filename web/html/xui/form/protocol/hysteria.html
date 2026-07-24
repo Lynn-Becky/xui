@@ -1,8 +1,16 @@
 {{define "form/hysteria"}}
 <a-alert type="info" message="Hysteria2" description="使用 Xray 的 hysteria 协议与 Hysteria2 传输；TLS 和 ALPN h3 为必需项。" show-icon style="margin-bottom: 8px"></a-alert>
 <a-form layout="inline" v-for="(client, index) in inbound.settings.clients" :key="index">
-    <a-form-item :label="'认证 ' + (index + 1)"><a-input v-model.trim="client.auth"></a-input></a-form-item>
-    <a-form-item label="email"><a-input v-model.trim="client.email"></a-input></a-form-item>
+    <a-form-item :label="'认证 ' + (index + 1)">
+        <a-input v-model.trim="client.auth">
+            <template slot="addonAfter"><a-button icon="reload" title="重新生成认证值" @click="client.auth = RandomUtil.randomLowerAndNum(16)"></a-button></template>
+        </a-input>
+    </a-form-item>
+    <a-form-item label="email">
+        <a-input v-model.trim="client.email">
+            <template slot="addonAfter"><a-button icon="reload" title="重新生成 email" @click="regenerateEmail(client)"></a-button></template>
+        </a-input>
+    </a-form-item>
     <a-form-item><a-button type="danger" size="small" @click="inbound.settings.delClient(index)">删除</a-button></a-form-item>
 </a-form>
 <a-button size="small" @click="inbound.settings.addClient()">添加客户端</a-button>
