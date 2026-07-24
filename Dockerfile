@@ -1,7 +1,7 @@
-FROM golang:latest AS builder
+FROM golang:1.26.5 AS builder
 WORKDIR /root
 COPY . .
-RUN go build main.go
+RUN go build -pgo=default.pgo -o x-ui .
 
 FROM alpine:3.22 AS xray
 ARG TARGETARCH=amd64
@@ -21,7 +21,7 @@ FROM debian:11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends -y ca-certificates \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 WORKDIR /root
-COPY --from=builder  /root/main /root/x-ui
+COPY --from=builder /root/x-ui /root/x-ui
 COPY bin/. /root/bin/.
 COPY --from=xray /out/ /root/bin/
 VOLUME [ "/etc/x-ui" ]

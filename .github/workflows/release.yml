@@ -9,6 +9,7 @@ permissions:
   contents: write
 
 env:
+  GO_VERSION: 1.26.5
   XRAY_VERSION: v26.6.27
 
 jobs:
@@ -41,14 +42,14 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v6
         with:
-          go-version: 1.18
+          go-version: ${{ env.GO_VERSION }}
       - name: build linux amd64 version
         run: |
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o xui-release -v main.go
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -pgo=default.pgo -o xui-release -v .
           mkdir x-ui
           cp xui-release x-ui/xui-release
           cp x-ui.service x-ui/x-ui.service
@@ -77,16 +78,16 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v6
         with:
-          go-version: 1.18
+          go-version: ${{ env.GO_VERSION }}
       - name: build linux arm64 version
         run: |
           sudo apt-get update
           sudo apt install gcc-aarch64-linux-gnu
-          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -o xui-release -v main.go
+          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -pgo=default.pgo -o xui-release -v .
           mkdir x-ui
           cp xui-release x-ui/xui-release
           cp x-ui.service x-ui/x-ui.service
@@ -131,15 +132,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $workspace = (Get-Location).Path
           $platform = 'linux/${{ matrix.arch }}'
-          $buildCommand = "apk add --no-cache build-base && CGO_ENABLED=1 GOOS=linux GOARCH=${{ matrix.arch }} go build -trimpath -ldflags='-s -w -buildid=' -o /src/xui-alpine main.go"
-          docker run --rm --platform $platform --volume "${workspace}:/src" --workdir /src golang:1.18-alpine3.17 /bin/sh -ec $buildCommand
+          $buildCommand = "apk add --no-cache build-base && CGO_ENABLED=1 CGO_CFLAGS='-D_LARGEFILE64_SOURCE -D_GNU_SOURCE' GOOS=linux GOARCH=${{ matrix.arch }} go build -pgo=default.pgo -trimpath -ldflags='-s -w -buildid=' -o /src/xui-alpine ."
+          docker run --rm --platform $platform --volume "${workspace}:/src" --workdir /src golang:${{ env.GO_VERSION }}-alpine3.22 /bin/sh -ec $buildCommand
           if ($LASTEXITCODE -ne 0) { throw 'Alpine x-ui build failed.' }
       - name: Verify binary on Alpine
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $workspace = (Get-Location).Path
-          docker run --rm --platform 'linux/${{ matrix.arch }}' --volume "${workspace}:/src:ro" alpine:3.17 /src/xui-alpine -v
+          docker run --rm --platform 'linux/${{ matrix.arch }}' --volume "${workspace}:/src:ro" alpine:3.22 /src/xui-alpine -v
           if ($LASTEXITCODE -ne 0) { throw 'Alpine x-ui runtime verification failed.' }
       - name: Package Alpine release
         shell: pwsh
@@ -164,16 +165,16 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v6
         with:
-          go-version: 1.18
+          go-version: ${{ env.GO_VERSION }}
       - name: build linux s390x version
         run: |
           sudo apt-get update
           sudo apt install gcc-s390x-linux-gnu -y
-          CGO_ENABLED=1 GOOS=linux GOARCH=s390x CC=s390x-linux-gnu-gcc go build -o xui-release -v main.go
+          CGO_ENABLED=1 GOOS=linux GOARCH=s390x CC=s390x-linux-gnu-gcc go build -pgo=default.pgo -o xui-release -v .
           mkdir x-ui
           cp xui-release x-ui/xui-release
           cp x-ui.service x-ui/x-ui.service
