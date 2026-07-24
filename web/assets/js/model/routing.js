@@ -19,9 +19,6 @@ class RoutingRuleModel {
             user: (source.user || []).join(', '),
             inboundTag: Array.isArray(source.inboundTag) ? source.inboundTag.slice() : [],
             protocol: Array.isArray(source.protocol) ? source.protocol.slice() : [],
-            vlessRoute: source.vlessRoute || '',
-            attrs: source.attrs && typeof source.attrs === 'object' && !Array.isArray(source.attrs)
-                ? Object.entries(source.attrs).map(([key, value]) => ({key, value: String(value)})) : [],
             outboundTag: source.outboundTag || '',
             balancerTag: source.balancerTag || '',
         };
@@ -42,15 +39,9 @@ class RoutingRuleModel {
             user: this.splitList(values.user),
             inboundTag: this.splitList(values.inboundTag),
             protocol: this.splitList(values.protocol),
-            vlessRoute: String(values.vlessRoute || '').trim(),
-            attrs: {},
             outboundTag: String(values.outboundTag || '').trim(),
             balancerTag: String(values.balancerTag || '').trim(),
         };
-        for (const item of values.attrs || []) {
-            const key = String(item && item.key || '').trim();
-            if (key) managed.attrs[key] = String(item.value || '');
-        }
         Object.assign(rule, managed);
         for (const key of Object.keys(rule)) {
             const value = rule[key];

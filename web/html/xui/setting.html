@@ -65,6 +65,150 @@
     .outbound-modal-section {
         margin-bottom: 18px;
     }
+
+    .xray-settings-shell {
+        min-width: 0;
+        padding: 0 20px 20px;
+        background: white;
+    }
+
+    .xray-primary-tabs > .ant-tabs-bar {
+        margin-bottom: 16px;
+    }
+
+    .xray-setting-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(280px, 1fr);
+        gap: 20px;
+        align-items: center;
+        min-height: 72px;
+        padding: 14px 8px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .xray-setting-title {
+        color: rgba(0, 0, 0, .85);
+        font-weight: 500;
+    }
+
+    .xray-setting-row > .ant-switch {
+        justify-self: start;
+    }
+
+    .xray-setting-desc,
+    .xray-muted {
+        margin-top: 3px;
+        color: rgba(0, 0, 0, .45);
+        word-break: break-word;
+    }
+
+    .xray-section-alert {
+        margin-bottom: 12px;
+        text-align: center;
+    }
+
+    .xray-list-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 14px;
+    }
+
+    .xray-host-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(300px, 2fr) 40px;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .xray-table-scroll {
+        width: 100%;
+        overflow-x: auto;
+        border: 1px solid #e8e8e8;
+    }
+
+    .xray-data-table {
+        width: 100%;
+        min-width: 680px;
+        border-collapse: collapse;
+        background: white;
+    }
+
+    .xray-data-table th,
+    .xray-data-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #e8e8e8;
+        text-align: left;
+        vertical-align: middle;
+    }
+
+    .xray-data-table th {
+        background: #fafafa;
+        font-weight: 500;
+    }
+
+    .xray-data-table tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .xray-table-actions {
+        width: 92px;
+        white-space: nowrap;
+    }
+
+    .xray-empty-state {
+        padding: 40px 16px;
+        text-align: center;
+        color: rgba(0, 0, 0, .45);
+        border: 1px dashed #d9d9d9;
+    }
+
+    .xray-advanced-meta h3 {
+        margin-bottom: 4px;
+        font-size: 16px;
+    }
+
+    .xray-advanced-editor {
+        width: 100%;
+        min-height: 420px !important;
+        max-height: 720px !important;
+        margin-top: 12px;
+        overflow: auto !important;
+        font-family: Consolas, "Courier New", monospace;
+        line-height: 1.55;
+        resize: vertical;
+    }
+
+    @media (max-width: 768px) {
+        .xray-settings-shell {
+            padding: 0 12px 16px;
+        }
+
+        .xray-setting-row {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 10px;
+            padding: 14px 4px;
+        }
+
+        .xray-host-row {
+            grid-template-columns: minmax(0, 1fr) 40px;
+        }
+
+        .xray-host-values {
+            grid-column: 1 / -1;
+            grid-row: 2;
+        }
+
+        .xray-host-delete {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .xray-advanced-editor {
+            min-height: 520px !important;
+        }
+    }
 </style>
 <body>
 <a-layout id="app" v-cloak>
@@ -74,7 +218,7 @@
             <a-spin :spinning="spinning" :delay="500" tip="loading">
                 <a-space direction="vertical">
                     <a-space direction="horizontal">
-                        <a-button type="primary" :disabled="saveBtnDisable" @click="updateAllSetting">保存配置</a-button>
+                        <a-button type="primary" :disabled="saveBtnDisable || xraySaveInvalid" @click="updateAllSetting">保存配置</a-button>
                         {{ if eq .page "xray" }}
                         <a-button type="danger" icon="poweroff" @click="stopXray">停止 Xray</a-button>
                         <a-button icon="reload" @click="restartXray">重启 Xray</a-button>
@@ -117,9 +261,187 @@
                         {{ end }}
                         {{ if eq .page "xray" }}
                         <a-tab-pane key="3" tab="Xray设置">
-                            <a-list item-layout="horizontal" style="background: white">
-                                <setting-list-item type="textarea" title="xray 配置模版" desc="以该模版为基础生成最终的 xray 配置文件，重启面板生效" v-model="allSetting.xrayTemplateConfig"></setting-list-item>
-                            </a-list>
+                            <div class="xray-settings-shell">
+                                <a-alert v-if="xrayTemplateError" type="error" show-icon
+                                         :message="xrayTemplateError" style="margin-bottom: 12px"></a-alert>
+                                <a-tabs v-model="xraySettingsTab" class="xray-primary-tabs">
+                                    <a-tab-pane key="basic" tab="基础配置">
+                                        <a-tabs v-model="xrayBasicTab">
+                                            <a-tab-pane key="general" tab="常规配置">
+                                                <a-alert class="xray-section-alert" type="warning" show-icon
+                                                         message="这些选项将决定常规配置"></a-alert>
+                                                <div class="xray-setting-row">
+                                                    <div>
+                                                        <div class="xray-setting-title">Freedom 协议策略</div>
+                                                        <div class="xray-setting-desc">设置 Freedom 协议中网络的输出策略</div>
+                                                    </div>
+                                                    <a-select :value="xrayState.freedomStrategy" style="width: 100%"
+                                                              @change="setFreedomStrategy">
+                                                        <a-select-option v-for="strategy in freedomStrategies" :key="strategy" :value="strategy">[[ strategy ]]</a-select-option>
+                                                    </a-select>
+                                                </div>
+                                                <div class="xray-setting-row">
+                                                    <div>
+                                                        <div class="xray-setting-title">配置路由域策略</div>
+                                                        <div class="xray-setting-desc">设置 DNS 解析的整体路由策略</div>
+                                                    </div>
+                                                    <a-select :value="xrayState.routingDomainStrategy" style="width: 100%"
+                                                              @change="setRoutingDomainStrategy">
+                                                        <a-select-option v-for="strategy in routingDomainStrategies" :key="strategy" :value="strategy">[[ strategy ]]</a-select-option>
+                                                    </a-select>
+                                                </div>
+                                            </a-tab-pane>
+                                            <a-tab-pane key="log" tab="日志">
+                                                <a-alert class="xray-section-alert" type="warning" show-icon
+                                                         message="日志可能会影响服务器性能，建议仅在需要时启用"></a-alert>
+                                                <div class="xray-setting-row">
+                                                    <div><div class="xray-setting-title">日志级别</div><div class="xray-setting-desc">错误日志的日志级别，用于指示需要记录的信息</div></div>
+                                                    <a-select :value="xrayState.log.loglevel" style="width: 100%" @change="value => setLogField('loglevel', value)">
+                                                        <a-select-option v-for="level in logLevels" :key="level" :value="level">[[ level ]]</a-select-option>
+                                                    </a-select>
+                                                </div>
+                                                <div class="xray-setting-row">
+                                                    <div><div class="xray-setting-title">访问日志</div><div class="xray-setting-desc">访问日志的文件路径；none 表示禁用</div></div>
+                                                    <a-select :value="xrayState.log.access" style="width: 100%" @change="value => setLogField('access', value)">
+                                                        <a-select-option value="none">none</a-select-option>
+                                                        <a-select-option value="./access.log">./access.log</a-select-option>
+                                                    </a-select>
+                                                </div>
+                                                <div class="xray-setting-row">
+                                                    <div><div class="xray-setting-title">错误日志</div><div class="xray-setting-desc">错误日志的文件路径；none 表示禁用</div></div>
+                                                    <a-select :value="xrayState.log.error" style="width: 100%" @change="value => setLogField('error', value)">
+                                                        <a-select-option value="">留空（核心默认）</a-select-option>
+                                                        <a-select-option value="none">none</a-select-option>
+                                                        <a-select-option value="./error.log">./error.log</a-select-option>
+                                                    </a-select>
+                                                </div>
+                                                <div class="xray-setting-row">
+                                                    <div><div class="xray-setting-title">隐藏地址</div><div class="xray-setting-desc">自动遮盖日志中出现的 IP 地址</div></div>
+                                                    <a-select :value="xrayState.log.maskAddress" style="width: 100%" @change="value => setLogField('maskAddress', value)">
+                                                        <a-select-option value="">不隐藏</a-select-option>
+                                                        <a-select-option value="quarter">quarter</a-select-option>
+                                                        <a-select-option value="half">half</a-select-option>
+                                                        <a-select-option value="full">full</a-select-option>
+                                                    </a-select>
+                                                </div>
+                                                <div class="xray-setting-row">
+                                                    <div><div class="xray-setting-title">DNS 日志</div><div class="xray-setting-desc">记录 DNS 查询日志</div></div>
+                                                    <a-switch :checked="xrayState.log.dnsLog" @change="value => setLogField('dnsLog', value)"></a-switch>
+                                                </div>
+                                            </a-tab-pane>
+                                        </a-tabs>
+                                    </a-tab-pane>
+
+                                    <a-tab-pane key="dns" tab="DNS">
+                                        <a-tabs v-model="xrayDnsTab">
+                                            <a-tab-pane key="general" tab="常规配置">
+                                                <div class="xray-setting-row">
+                                                    <div><div class="xray-setting-title">启用 DNS</div><div class="xray-setting-desc">启用 Xray 内置 DNS 服务器</div></div>
+                                                    <a-switch :checked="xrayState.dnsEnabled" @change="toggleXrayDns"></a-switch>
+                                                </div>
+                                                <template v-if="xrayState.dnsEnabled">
+                                                    <a-alert class="xray-section-alert" type="warning" show-icon
+                                                             message="DNS 可能通过本地或明文查询泄漏；重视隐私时请使用经路由的加密 DNS 并禁用回退。"></a-alert>
+                                                    <div class="xray-setting-row">
+                                                        <div><div class="xray-setting-title">DNS 入站标签</div><div class="xray-setting-desc">该标签可在路由规则中作为入站标签使用</div></div>
+                                                        <a-input :value="xrayState.dns.tag" @input="event => setDnsField('tag', event.target.value)"></a-input>
+                                                    </div>
+                                                    <div class="xray-setting-row">
+                                                        <div><div class="xray-setting-title">客户端 IP</div><div class="xray-setting-desc">在 DNS 查询期间向服务器声明指定的 IP 位置</div></div>
+                                                        <a-input :value="xrayState.dns.clientIp" placeholder="可选" @input="event => setDnsField('clientIp', event.target.value, true)"></a-input>
+                                                    </div>
+                                                    <div class="xray-setting-row">
+                                                        <div><div class="xray-setting-title">查询策略</div><div class="xray-setting-desc">解析域名的整体策略</div></div>
+                                                        <a-select :value="xrayState.dns.queryStrategy" style="width: 100%" @change="value => setDnsField('queryStrategy', value)">
+                                                            <a-select-option v-for="strategy in dnsQueryStrategies" :key="strategy" :value="strategy">[[ strategy ]]</a-select-option>
+                                                        </a-select>
+                                                    </div>
+                                                    <div class="xray-setting-row" v-for="item in dnsBooleanFields" :key="item.field">
+                                                        <div><div class="xray-setting-title">[[ item.title ]]</div><div class="xray-setting-desc">[[ item.desc ]]</div></div>
+                                                        <a-switch :checked="xrayState.dns[item.field]" @change="value => setDnsField(item.field, value)"></a-switch>
+                                                    </div>
+                                                    <div class="xray-setting-row">
+                                                        <div><div class="xray-setting-title">过期 TTL</div><div class="xray-setting-desc">过期缓存条目的有效期（秒）；0 表示永不过期</div></div>
+                                                        <a-input-number :value="xrayState.dns.serveExpiredTTL" :min="0" :step="60" style="width: 100%" @change="value => setDnsField('serveExpiredTTL', Number(value) || 0)"></a-input-number>
+                                                    </div>
+                                                </template>
+                                            </a-tab-pane>
+
+                                            <a-tab-pane key="hosts" tab="Hosts" :disabled="!xrayState.dnsEnabled">
+                                                <div class="xray-list-toolbar">
+                                                    <a-button type="primary" icon="plus" @click="addDnsHost">添加 Host</a-button>
+                                                </div>
+                                                <div v-if="dnsHosts.length === 0" class="xray-empty-state">未定义任何 Host</div>
+                                                <div v-for="(host, index) in dnsHosts" :key="index" class="xray-host-row">
+                                                    <a-input :value="host.domain" placeholder="域名，例如 domain:example.com" @input="event => updateDnsHostDomain(index, event.target.value)"></a-input>
+                                                    <a-select class="xray-host-values" mode="tags" :value="host.values" :token-separators="[',', ' ']"
+                                                              placeholder="IP 或域名，输入后按 Enter" @change="values => updateDnsHostValues(index, values)"></a-select>
+                                                    <a-tooltip title="删除">
+                                                        <a-button class="xray-host-delete" type="danger" icon="delete" aria-label="删除 Host" @click="removeDnsHost(index)"></a-button>
+                                                    </a-tooltip>
+                                                </div>
+                                            </a-tab-pane>
+
+                                            <a-tab-pane key="servers" tab="DNS" :disabled="!xrayState.dnsEnabled">
+                                                <div class="xray-list-toolbar">
+                                                    <a-button type="primary" icon="plus" @click="openDnsServer(-1)">添加服务器</a-button>
+                                                    <a-button v-if="xrayState.dns && xrayState.dns.servers.length" type="danger" icon="delete" @click="clearDnsServers">删除全部</a-button>
+                                                </div>
+                                                <div v-if="!xrayState.dns || xrayState.dns.servers.length === 0" class="xray-empty-state">未配置 DNS 服务器</div>
+                                                <div v-else class="xray-table-scroll">
+                                                    <table class="xray-data-table">
+                                                        <thead><tr><th>#</th><th>地址</th><th>域名</th><th>预期 IP</th><th class="xray-table-actions">操作</th></tr></thead>
+                                                        <tbody>
+                                                        <tr v-for="(server, index) in xrayState.dns.servers" :key="index">
+                                                            <td>[[ index + 1 ]]</td>
+                                                            <td>[[ dnsServerAddress(server) ]]</td>
+                                                            <td class="xray-muted">[[ dnsServerList(server, 'domains') ]]</td>
+                                                            <td class="xray-muted">[[ dnsServerExpectedIps(server) ]]</td>
+                                                            <td class="xray-table-actions">
+                                                                <a-tooltip title="编辑"><a-button size="small" icon="edit" aria-label="编辑 DNS 服务器" @click="openDnsServer(index)"></a-button></a-tooltip>
+                                                                <a-popconfirm title="删除这个 DNS 服务器？" ok-text="删除" cancel-text="取消" @confirm="removeDnsServer(index)">
+                                                                    <a-button size="small" type="danger" icon="delete" aria-label="删除 DNS 服务器"></a-button>
+                                                                </a-popconfirm>
+                                                            </td>
+                                                        </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </a-tab-pane>
+
+                                            <a-tab-pane key="fakedns" tab="Fake DNS" :disabled="!xrayState.dnsEnabled">
+                                                <div class="xray-list-toolbar">
+                                                    <a-button type="primary" icon="plus" @click="addFakeDns">添加 Fake DNS</a-button>
+                                                </div>
+                                                <div v-if="xrayState.fakeDns.length === 0" class="xray-empty-state">未配置 Fake DNS</div>
+                                                <div v-else class="xray-table-scroll">
+                                                    <table class="xray-data-table">
+                                                        <thead><tr><th>#</th><th>IP 池子网</th><th>池大小</th><th class="xray-table-actions">操作</th></tr></thead>
+                                                        <tbody>
+                                                        <tr v-for="(row, index) in xrayState.fakeDns" :key="index">
+                                                            <td>[[ index + 1 ]]</td>
+                                                            <td><a-input :value="row.ipPool" @input="event => updateFakeDns(index, 'ipPool', event.target.value)"></a-input></td>
+                                                            <td><a-input-number :value="row.poolSize" :min="1" style="width: 100%" @change="value => updateFakeDns(index, 'poolSize', Number(value) || 1)"></a-input-number></td>
+                                                            <td class="xray-table-actions"><a-tooltip title="删除"><a-button type="danger" icon="delete" aria-label="删除 Fake DNS" @click="removeFakeDns(index)"></a-button></a-tooltip></td>
+                                                        </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </a-tab-pane>
+                                        </a-tabs>
+                                    </a-tab-pane>
+
+                                    <a-tab-pane key="advanced" tab="高级配置">
+                                        <div class="xray-advanced-meta">
+                                            <h3>高级 Xray 配置模板</h3>
+                                            <div class="xray-setting-desc">最终的 Xray 配置文件将基于此模板生成</div>
+                                        </div>
+                                        <a-textarea class="xray-advanced-editor" :value="allSetting.xrayTemplateConfig"
+                                                    :auto-size="{minRows: 24, maxRows: 36}" :spellcheck="false"
+                                                    @input="event => onAdvancedTemplateInput(event.target.value)"></a-textarea>
+                                    </a-tab-pane>
+                                </a-tabs>
+                            </div>
                         </a-tab-pane>
                         {{ end }}
                         {{ if eq .page "setting" }}
@@ -177,6 +499,46 @@
             </a-spin>
         </a-layout-content>
     </a-layout>
+
+{{ if eq .page "xray" }}
+<a-modal :visible="dnsServerModal.visible" :width="720" :mask-closable="false"
+         :title="dnsServerModal.index < 0 ? '添加 DNS 服务器' : '编辑 DNS 服务器'"
+         ok-text="确认" cancel-text="取消" @ok="saveDnsServer" @cancel="closeDnsServer">
+    <a-form-model :label-col="{xs: {span: 24}, sm: {span: 8}}" :wrapper-col="{xs: {span: 24}, sm: {span: 14}}">
+        <a-form-model-item label="地址" required>
+            <a-input v-model.trim="dnsServerModal.form.address" placeholder="localhost、1.1.1.1 或 https://..."></a-input>
+        </a-form-model-item>
+        <a-form-model-item label="端口">
+            <a-input-number v-model.number="dnsServerModal.form.port" :min="1" :max="65535"
+                            :disabled="dnsServerEncrypted" style="width: 100%"></a-input-number>
+        </a-form-model-item>
+        <a-form-model-item label="标签"><a-input v-model.trim="dnsServerModal.form.tag"></a-input></a-form-model-item>
+        <a-form-model-item label="客户端 IP"><a-input v-model.trim="dnsServerModal.form.clientIP"></a-input></a-form-model-item>
+        <a-form-model-item label="查询策略">
+            <a-select v-model="dnsServerModal.form.queryStrategy" style="width: 100%">
+                <a-select-option v-for="strategy in dnsQueryStrategies" :key="strategy" :value="strategy">[[ strategy ]]</a-select-option>
+            </a-select>
+        </a-form-model-item>
+        <a-form-model-item label="超时（毫秒）"><a-input-number v-model.number="dnsServerModal.form.timeoutMs" :min="0" :step="500" style="width: 100%"></a-input-number></a-form-model-item>
+        <a-divider></a-divider>
+        <a-form-model-item label="域名">
+            <a-select v-model="dnsServerModal.form.domains" mode="tags" :token-separators="[',', ' ']" style="width: 100%"></a-select>
+        </a-form-model-item>
+        <a-form-model-item label="预期 IP">
+            <a-select v-model="dnsServerModal.form.expectedIPs" mode="tags" :token-separators="[',', ' ']" style="width: 100%"></a-select>
+        </a-form-model-item>
+        <a-form-model-item label="意外 IP">
+            <a-select v-model="dnsServerModal.form.unexpectedIPs" mode="tags" :token-separators="[',', ' ']" style="width: 100%"></a-select>
+        </a-form-model-item>
+        <a-divider></a-divider>
+        <a-form-model-item label="跳过回退"><a-switch v-model="dnsServerModal.form.skipFallback"></a-switch></a-form-model-item>
+        <a-form-model-item label="最终查询"><a-switch v-model="dnsServerModal.form.finalQuery"></a-switch></a-form-model-item>
+        <a-form-model-item label="禁用缓存"><a-switch v-model="dnsServerModal.form.disableCache"></a-switch></a-form-model-item>
+        <a-form-model-item label="提供过期结果"><a-switch v-model="dnsServerModal.form.serveStale"></a-switch></a-form-model-item>
+        <a-form-model-item label="过期 TTL"><a-input-number v-model.number="dnsServerModal.form.serveExpiredTTL" :min="0" :step="60" style="width: 100%"></a-input-number></a-form-model-item>
+    </a-form-model>
+</a-modal>
+{{ end }}
 
 {{ if eq .page "outbounds" }}
 <a-modal :visible="outboundModal.visible" :width="900" :mask-closable="false"
@@ -365,8 +727,41 @@
             editingOutbound: null,
             editingOutboundJson: '',
             warpModal: {visible: false, loading: false, data: null, config: null, staged: null, license: '', updateInterval: 0},
+            xraySettingsTab: 'basic',
+            xrayBasicTab: 'general',
+            xrayDnsTab: 'general',
+            xrayTemplateError: '',
+            xrayEditor: null,
+            xrayState: {
+                freedomStrategy: 'AsIs',
+                routingDomainStrategy: 'AsIs',
+                log: {loglevel: 'warning', access: 'none', error: '', maskAddress: '', dnsLog: false},
+                dnsEnabled: false,
+                dns: null,
+                fakeDns: [],
+            },
+            freedomStrategies: ['AsIs', 'UseIP', 'UseIPv4', 'UseIPv6', 'UseIPv6v4', 'UseIPv4v6', 'ForceIP', 'ForceIPv6v4', 'ForceIPv6', 'ForceIPv4v6', 'ForceIPv4'],
+            routingDomainStrategies: ['AsIs', 'IPIfNonMatch', 'IPOnDemand'],
+            logLevels: ['none', 'debug', 'info', 'warning', 'error'],
+            dnsQueryStrategies: ['UseIP', 'UseIPv4', 'UseIPv6', 'UseSystem'],
+            dnsBooleanFields: [
+                {field: 'disableCache', title: '禁用缓存', desc: '禁用 DNS 缓存'},
+                {field: 'disableFallback', title: '禁用回退', desc: '禁用回退 DNS 查询'},
+                {field: 'disableFallbackIfMatch', title: '匹配时禁用回退', desc: 'DNS 服务器匹配域名列表命中时禁用回退'},
+                {field: 'enableParallelQuery', title: '启用并行查询', desc: '同时查询多个 DNS 服务器以加快解析'},
+                {field: 'useSystemHosts', title: '使用系统 Hosts', desc: '读取操作系统的 Hosts 文件'},
+                {field: 'serveStale', title: '提供过期结果', desc: '在后台刷新时返回过期的缓存结果'},
+            ],
+            dnsHosts: [],
+            dnsServerModal: {visible: false, index: -1, original: null, form: XraySettingsEditor.dnsServerToForm(null)},
         },
         computed: {
+            xraySaveInvalid() {
+                return this.xrayTemplateError !== '';
+            },
+            dnsServerEncrypted() {
+                return XraySettingsEditor.isEncryptedDnsAddress(this.dnsServerModal.form.address);
+            },
             editingOutboundTestseed: {
                 get() {
                     return this.editingOutbound && this.editingOutbound.settings.testseed
@@ -419,6 +814,145 @@
             loading(spinning = true) {
                 this.spinning = spinning;
             },
+            refreshXrayState(editor, preserveHosts = false) {
+                this.xrayEditor = editor;
+                this.xrayState = editor.view();
+                if (!preserveHosts) this.dnsHosts = editor.hostRows();
+                this.xrayTemplateError = '';
+            },
+            loadXraySettings(preserveHosts = false) {
+                try {
+                    const editor = new XraySettingsEditor(this.allSetting.xrayTemplateConfig);
+                    this.refreshXrayState(editor, preserveHosts);
+                    return true;
+                } catch (error) {
+                    this.xrayEditor = null;
+                    this.xrayTemplateError = error.message;
+                    return false;
+                }
+            },
+            mutateXraySettings(mutator, preserveHosts = false) {
+                let editor;
+                try {
+                    editor = new XraySettingsEditor(this.allSetting.xrayTemplateConfig);
+                    mutator(editor);
+                } catch (error) {
+                    this.xrayTemplateError = error.message;
+                    this.$message.error(error.message);
+                    return false;
+                }
+                this.allSetting.xrayTemplateConfig = editor.serialize();
+                this.refreshXrayState(editor, preserveHosts);
+                return true;
+            },
+            onAdvancedTemplateInput(value) {
+                this.allSetting.xrayTemplateConfig = value;
+                this.loadXraySettings();
+            },
+            setFreedomStrategy(value) {
+                this.mutateXraySettings(editor => editor.setFreedomStrategy(value));
+            },
+            setRoutingDomainStrategy(value) {
+                this.mutateXraySettings(editor => editor.setRoutingDomainStrategy(value));
+            },
+            setLogField(field, value) {
+                this.mutateXraySettings(editor => editor.setLogField(field, value));
+            },
+            toggleXrayDns(enabled) {
+                if (!this.mutateXraySettings(editor => editor.toggleDns(enabled))) return;
+                if (!enabled) this.xrayDnsTab = 'general';
+            },
+            setDnsField(field, value, omitEmpty = false) {
+                this.mutateXraySettings(editor => editor.setDnsField(field, value, omitEmpty));
+            },
+            addDnsHost() {
+                this.dnsHosts.push({domain: '', values: []});
+            },
+            syncDnsHosts() {
+                this.mutateXraySettings(editor => editor.setHosts(this.dnsHosts), true);
+            },
+            updateDnsHostDomain(index, value) {
+                this.$set(this.dnsHosts[index], 'domain', value);
+                this.syncDnsHosts();
+            },
+            updateDnsHostValues(index, values) {
+                this.$set(this.dnsHosts[index], 'values', values);
+                this.syncDnsHosts();
+            },
+            removeDnsHost(index) {
+                this.dnsHosts.splice(index, 1);
+                this.syncDnsHosts();
+            },
+            openDnsServer(index) {
+                const servers = this.xrayState.dns && this.xrayState.dns.servers || [];
+                const original = index >= 0 ? servers[index] : null;
+                this.dnsServerModal = {
+                    visible: true,
+                    index,
+                    original: XraySettingsEditor.clone(original),
+                    form: XraySettingsEditor.dnsServerToForm(original),
+                };
+            },
+            closeDnsServer() {
+                this.dnsServerModal.visible = false;
+            },
+            saveDnsServer() {
+                const form = this.dnsServerModal.form;
+                if (!String(form.address || '').trim()) {
+                    this.$message.error('DNS 服务器地址不能为空。');
+                    return;
+                }
+                if (!this.dnsServerEncrypted && (!Number.isInteger(Number(form.port)) || Number(form.port) < 1 || Number(form.port) > 65535)) {
+                    this.$message.error('DNS 服务器端口必须在 1 到 65535 之间。');
+                    return;
+                }
+                const value = XraySettingsEditor.dnsServerFromForm(form, this.dnsServerModal.original);
+                const servers = XraySettingsEditor.clone(this.xrayState.dns && this.xrayState.dns.servers || []);
+                if (this.dnsServerModal.index < 0) servers.push(value);
+                else servers.splice(this.dnsServerModal.index, 1, value);
+                if (this.mutateXraySettings(editor => editor.setDnsServers(servers))) this.closeDnsServer();
+            },
+            removeDnsServer(index) {
+                const servers = XraySettingsEditor.clone(this.xrayState.dns && this.xrayState.dns.servers || []);
+                servers.splice(index, 1);
+                this.mutateXraySettings(editor => editor.setDnsServers(servers));
+            },
+            clearDnsServers() {
+                this.$confirm({
+                    title: '删除所有 DNS 服务器？',
+                    content: '此操作将从当前配置中移除全部 DNS 服务器。',
+                    okText: '删除',
+                    okType: 'danger',
+                    cancelText: '取消',
+                    onOk: () => this.mutateXraySettings(editor => editor.setDnsServers([])),
+                });
+            },
+            dnsServerAddress(server) {
+                return XraySettingsEditor.dnsServerAddress(server);
+            },
+            dnsServerList(server, field) {
+                return server && typeof server === 'object' && Array.isArray(server[field]) ? server[field].join(', ') : '';
+            },
+            dnsServerExpectedIps(server) {
+                if (!server || typeof server !== 'object') return '';
+                const values = server.expectedIPs || server.expectIPs;
+                return Array.isArray(values) ? values.join(', ') : '';
+            },
+            addFakeDns() {
+                const rows = XraySettingsEditor.clone(this.xrayState.fakeDns);
+                rows.push({ipPool: '198.18.0.0/15', poolSize: 65535});
+                this.mutateXraySettings(editor => editor.setFakeDnsRows(rows));
+            },
+            updateFakeDns(index, field, value) {
+                const rows = XraySettingsEditor.clone(this.xrayState.fakeDns);
+                rows[index][field] = value;
+                this.mutateXraySettings(editor => editor.setFakeDnsRows(rows));
+            },
+            removeFakeDns(index) {
+                const rows = XraySettingsEditor.clone(this.xrayState.fakeDns);
+                rows.splice(index, 1);
+                this.mutateXraySettings(editor => editor.setFakeDnsRows(rows));
+            },
             async getAllSetting() {
                 this.loading(true);
                 const msg = await HttpUtil.post("/xui/setting/all");
@@ -426,6 +960,7 @@
                 if (msg.success) {
                     this.oldAllSetting = new AllSetting(msg.obj);
                     this.allSetting = new AllSetting(msg.obj);
+                    this.loadXraySettings();
                     this.loadOutboundItems();
                     this.saveBtnDisable = true;
                 }
@@ -458,6 +993,7 @@
                 template.outbounds = this.outboundItems.map(item => JSON.parse(JSON.stringify(item)));
                 this.allSetting.xrayTemplateConfig = JSON.stringify(template, null, 2);
                 this.outboundTemplateError = '';
+                this.loadXraySettings();
                 return true;
             },
             ensureEditingStream() {
@@ -664,6 +1200,10 @@
                 this.writeOutboundItems();
             },
             async updateAllSetting() {
+                if (!this.loadXraySettings()) {
+                    this.$message.error(this.xrayTemplateError);
+                    return;
+                }
                 this.loading(true);
                 const msg = await HttpUtil.post("/xui/setting/update", this.allSetting);
                 this.loading(false);

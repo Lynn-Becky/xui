@@ -13,8 +13,6 @@
         text-overflow: ellipsis;
         white-space: nowrap;
     }
-    .routing-attrs-row { display: flex; gap: 8px; margin-bottom: 8px; }
-    .routing-attrs-row .ant-input { flex: 1; }
 </style>
 <body>
 <a-layout id="app" v-cloak>
@@ -100,15 +98,6 @@
             </a-form-model-item>
             <a-form-model-item label="入站标签">
                 <a-select v-model="editingRule.inboundTag" mode="tags" :token-separators="[',']"></a-select>
-            </a-form-model-item>
-            <a-form-model-item label="VLESS 路由"><a-input v-model.trim="editingRule.vlessRoute"></a-input></a-form-model-item>
-            <a-form-model-item label="属性">
-                <div v-for="(attr, index) in editingRule.attrs" :key="index" class="routing-attrs-row">
-                    <a-input v-model.trim="attr.key" placeholder="键"></a-input>
-                    <a-input v-model="attr.value" placeholder="值"></a-input>
-                    <a-button icon="delete" @click="removeAttr(index)"></a-button>
-                </div>
-                <a-button size="small" icon="plus" @click="addAttr">添加属性</a-button>
             </a-form-model-item>
             <a-form-model-item label="出站标签">
                 <a-select v-model="editingRule.outboundTag" show-search allow-clear>
@@ -204,8 +193,6 @@
                 this.editingRule = null;
                 this.originalRule = null;
             },
-            addAttr() { this.editingRule.attrs.push({key: '', value: ''}); },
-            removeAttr(index) { this.editingRule.attrs.splice(index, 1); },
             saveRule() {
                 const rule = RoutingRuleModel.fromForm(this.editingRule, this.originalRule);
                 if (!RoutingRuleModel.hasMatcher(rule)) {

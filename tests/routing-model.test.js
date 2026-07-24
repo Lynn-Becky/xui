@@ -22,6 +22,8 @@ const editor = new RoutingRulesEditor(JSON.stringify({
             inboundTag: ['in-1'],
             outboundTag: 'direct',
             ruleTag: 'preserve-me',
+            vlessRoute: '443',
+            attrs: {'User-Agent': 'regexp:^Mozilla.*'},
         }],
     },
 }));
@@ -33,13 +35,13 @@ const original = editor.rules[0];
 const form = RoutingRuleModel.toForm(original);
 form.domain = 'geosite:private,\nregexp:^example\\.com$';
 form.protocol = ['http', 'tls'];
-form.attrs = [{key: ':method', value: 'GET'}];
 const updated = RoutingRuleModel.fromForm(form, original);
 
 assert.deepEqual(Array.from(updated.domain), ['geosite:private', 'regexp:^example\\.com$']);
 assert.deepEqual(Array.from(updated.protocol), ['http', 'tls']);
-assert.equal(updated.attrs[':method'], 'GET');
 assert.equal(updated.ruleTag, 'preserve-me');
+assert.equal(updated.vlessRoute, '443');
+assert.equal(updated.attrs['User-Agent'], 'regexp:^Mozilla.*');
 assert.equal(updated.type, 'field');
 assert.equal(RoutingRuleModel.hasMatcher(updated), true);
 assert.equal(RoutingRuleModel.isApiRule({outboundTag: 'api', inboundTag: ['api']}), true);
