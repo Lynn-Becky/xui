@@ -20,5 +20,11 @@
 <script>
     const basePath = '{{ .base_path }}';
     axios.defaults.baseURL = basePath;
+    // Echoed back on every state-changing request; the server rejects those
+    // that omit it. Empty on the login page, which has no session yet.
+    const csrfToken = '{{ .csrf_token }}';
+    if (csrfToken) {
+        axios.defaults.headers.common['X-CSRF-Token'] = csrfToken;
+    }
 </script>
 {{end}}

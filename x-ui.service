@@ -7,6 +7,25 @@ Wants=network.target
 Type=simple
 WorkingDirectory=/usr/local/x-ui/
 ExecStart=/usr/local/x-ui/x-ui
+Restart=on-failure
+RestartSec=5
+
+# The panel writes bin/config.json, which contains every inbound's secrets
+# (VMess/VLESS ids, Trojan and Shadowsocks passwords, REALITY private keys), and
+# the SQLite database under /etc/x-ui. systemd's default umask of 0022 left both
+# readable by every local account.
+UMask=0077
+
+# The process runs as root to bind privileged ports and manage the Xray child,
+# so constrain what that root can reach.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths=/etc/x-ui /usr/local/x-ui
 
 [Install]
 WantedBy=multi-user.target

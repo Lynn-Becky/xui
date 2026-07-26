@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type AutoHttpsConn struct {
@@ -24,10 +25,32 @@ func NewAutoHttpsConn(conn net.Conn) net.Conn {
 	}
 }
 
+// probeTimeout bounds the initial read used to tell a plain HTTP request from a
+// TLS handshake. This read happens before net/http ever sees the connection, so
+// the server's ReadHeaderTimeout does not cover it: without a deadline a client
+// that connects and sends nothing parks a goroutine here indefinitely, which is
+// an unauthenticated way to exhaust the process.
+const probeTimeout = 15 * time.Second
+
 func (c *AutoHttpsConn) readRequest() bool {
-	c.firstBuf = make([]byte, 2048)
-	n, err := c.Conn.Read(c.firstBuf)
-	c.firstBuf = c.firstBuf[:n]
+	if err := c.Conn.SetReadDeadline(time.Now().Add(probeTimeout)); err != nil {
+		c.firstBuf = nil
+		return false
+	}
+	// Clear the deadline again so it does not apply to the TLS handshake or to
+	// any later read on this connection.
+	defer func() { _ = c.Conn.SetReadDeadline(time.Time{}) }()
+
+	buf := make([]byte, 2048)
+	n, err := c.Conn.Read(buf)
+	if n > 0 {
+		c.firstBuf = buf[:n]
+	} else {
+		// Nothing to replay. Leave firstBuf nil so Read falls through to the
+		// underlying connection and surfaces the error instead of spinning on
+		// a zero-length buffer.
+		c.firstBuf = nil
+	}
 	if err != nil {
 		return false
 	}

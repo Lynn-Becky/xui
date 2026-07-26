@@ -114,13 +114,15 @@ func showSetting(show bool) {
 			fmt.Println("get current user info failed,error info:", err)
 		}
 		username := userModel.Username
-		userpasswd := userModel.Password
-		if (username == "") || (userpasswd == "") {
-			fmt.Println("current username or password is empty")
+		if username == "" {
+			fmt.Println("current username is empty")
 		}
 		fmt.Println("current pannel settings as follows:")
 		fmt.Println("username:", username)
-		fmt.Println("userpasswd:", userpasswd)
+		// The password is stored as a bcrypt hash and is deliberately not
+		// printed. Echoing it here meant every install/upgrade run dumped the
+		// live administrator credential into stdout, logs and CI transcripts.
+		fmt.Println("userpasswd: <hidden, stored as a hash>")
 		fmt.Println("port:", port)
 		fmt.Println("webBasePath:", webBasePath)
 		fmt.Println("webCertFile:", webCertFile)
@@ -341,6 +343,16 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 			return
+		}
+		// Credentials are accepted through the environment so callers do not
+		// have to put them in argv, which is world-readable through
+		// /proc/<pid>/cmdline and is captured by process auditing and shell
+		// history.
+		if username == "" {
+			username = os.Getenv("XUI_SETTING_USERNAME")
+		}
+		if password == "" {
+			password = os.Getenv("XUI_SETTING_PASSWORD")
 		}
 		if reset {
 			resetSetting()

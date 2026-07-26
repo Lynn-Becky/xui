@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"regexp"
@@ -156,7 +155,11 @@ func (p *process) Start() (err error) {
 		return common.NewErrorf("生成 xray 配置文件失败: %v", err)
 	}
 	configPath := GetConfigPath()
-	err = os.WriteFile(configPath, data, fs.ModePerm)
+	// 0600, not fs.ModePerm: this file holds every inbound's secrets — VMess and
+	// VLESS ids, Trojan and Shadowsocks passwords, REALITY private keys and
+	// WireGuard keys — and 0777 masked by the usual 0022 umask left it readable
+	// by every local account.
+	err = os.WriteFile(configPath, data, 0600)
 	if err != nil {
 		return common.NewErrorf("写入配置文件失败: %v", err)
 	}

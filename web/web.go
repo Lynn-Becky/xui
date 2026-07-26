@@ -20,14 +20,11 @@ import (
 	"x-ui/web/job"
 	"x-ui/web/network"
 	"x-ui/web/service"
+	"x-ui/web/session"
 
-	"github.com/BurntSushi/toml"
 	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/robfig/cron/v3"
-	"golang.org/x/text/language"
 )
 
 //go:embed assets/*
@@ -186,6 +183,12 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 
 	engine := gin.Default()
+	// gin trusts every peer's X-Forwarded-For by default, which would let any
+	// client choose its own apparent source address. Trust only the proxies the
+	// operator names.
+	if err := engine.SetTrustedProxies(config.GetTrustedProxies()); err != nil {
+		return nil, err
+	}
 	tlsConfig, err := s.directTLSConfig()
 	if err != nil {
 		return nil, err
@@ -203,13 +206,10 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 	assetsBasePath := basePath + "assets/"
 
-	store := cookie.NewStore(secret)
-	store.Options(sessions.Options{
-		Path:     basePath,
-		HttpOnly: true,
-		Secure:   directHTTPS,
-		SameSite: http.SameSiteLaxMode,
-	})
+	store, err := session.NewStore(secret, basePath, directHTTPS)
+	if err != nil {
+		return nil, err
+	}
 	engine.Use(sessions.Sessions("session", store))
 	engine.Use(func(c *gin.Context) {
 		c.Set("base_path", basePath)
@@ -221,28 +221,37 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 			c.Header("Cache-Control", "max-age=31536000")
 		}
 	})
-	err = s.initI18n(engine)
-	if err != nil {
-		return nil, err
-	}
-
+	engine.Use(securityHeaders(directHTTPS))
+	var renderer *localeRenderer
 	if config.IsDebug() {
 		// for develop
 		files, err := s.getHtmlFiles()
 		if err != nil {
 			return nil, err
 		}
-		engine.LoadHTMLFiles(files...)
-		engine.StaticFS(basePath+"assets", http.FS(os.DirFS("web/assets")))
-	} else {
-		// for prod
-		t, err := s.getHtmlTemplate(engine.FuncMap)
+		renderer, err = newLocaleRenderer(func(funcMap template.FuncMap) (*template.Template, error) {
+			return template.New("").Funcs(funcMap).ParseFiles(files...)
+		})
 		if err != nil {
 			return nil, err
 		}
-		engine.SetHTMLTemplate(t)
+		engine.StaticFS(basePath+"assets", http.FS(os.DirFS("web/assets")))
+	} else {
+		// for prod
+		renderer, err = newLocaleRenderer(s.getHtmlTemplate)
+		if err != nil {
+			return nil, err
+		}
 		engine.StaticFS(basePath+"assets", http.FS(&wrapAssetsFS{FS: assetsFS}))
 	}
+	engine.HTMLRender = renderer
+
+	// Resolve the locale per request. This must be registered before the route
+	// group below, because gin fixes a route's handler chain at registration
+	// time.
+	engine.Use(func(c *gin.Context) {
+		c.Set(controller.LocaleKey, renderer.Resolve(c.GetHeader("Accept-Language")))
+	})
 
 	g := engine.Group(basePath)
 
@@ -251,75 +260,6 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	s.xui = controller.NewXUIController(g)
 
 	return engine, nil
-}
-
-func (s *Server) initI18n(engine *gin.Engine) error {
-	bundle := i18n.NewBundle(language.SimplifiedChinese)
-	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
-	err := fs.WalkDir(i18nFS, "translation", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		data, err := i18nFS.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		_, err = bundle.ParseMessageFileBytes(data, path)
-		return err
-	})
-	if err != nil {
-		return err
-	}
-
-	findI18nParamNames := func(key string) []string {
-		names := make([]string, 0)
-		keyLen := len(key)
-		for i := 0; i < keyLen-1; i++ {
-			if key[i:i+2] == "{{" { // 判断开头 "{{"
-				j := i + 2
-				isFind := false
-				for ; j < keyLen-1; j++ {
-					if key[j:j+2] == "}}" { // 结尾 "}}"
-						isFind = true
-						break
-					}
-				}
-				if isFind {
-					names = append(names, key[i+3:j])
-				}
-			}
-		}
-		return names
-	}
-
-	var localizer *i18n.Localizer
-
-	engine.FuncMap["i18n"] = func(key string, params ...string) (string, error) {
-		names := findI18nParamNames(key)
-		if len(names) != len(params) {
-			return "", common.NewError("find names:", names, "---------- params:", params, "---------- num not equal")
-		}
-		templateData := map[string]interface{}{}
-		for i := range names {
-			templateData[names[i]] = params[i]
-		}
-		return localizer.Localize(&i18n.LocalizeConfig{
-			MessageID:    key,
-			TemplateData: templateData,
-		})
-	}
-
-	engine.Use(func(c *gin.Context) {
-		accept := c.GetHeader("Accept-Language")
-		localizer = i18n.NewLocalizer(bundle, accept)
-		c.Set("localizer", localizer)
-		c.Next()
-	})
-
-	return nil
 }
 
 func (s *Server) startTask() {
@@ -415,6 +355,17 @@ func (s *Server) Start() (err error) {
 
 	s.httpServer = &http.Server{
 		Handler: engine,
+		// ReadHeaderTimeout is the slowloris control: without it a client can
+		// open connections, dribble headers and park a goroutine each forever.
+		// The remaining timeouts are deliberately generous because the panel
+		// legitimately streams large bodies — a database import is capped at
+		// service.MaxDatabaseUploadSize (256 MiB) and the backup download can be
+		// comparably large — so a tight ReadTimeout would break those on a slow
+		// link while adding little over the header timeout.
+		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       15 * time.Minute,
+		WriteTimeout:      15 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
 	}
 
 	go func() {

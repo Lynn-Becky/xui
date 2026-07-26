@@ -112,9 +112,37 @@ before_show_menu() {
     show_menu
 }
 
+# run_installer downloads the installer to a file and runs it, reporting the
+# real outcome.
+#
+# The previous form, bash <(curl ...) followed by a $? check, reports bash's exit
+# status and not curl's: when the download fails — a 4xx, DNS failure, an on-path
+# reset, or GitHub simply being unreachable — bash runs an empty script and exits
+# 0, so a failed update was announced as a successful one.
+run_installer() {
+    local installer
+    installer="$(mktemp -t x-ui-install.XXXXXXXXXX)" || {
+        LOGE "创建临时文件失败"
+        return 1
+    }
+    if ! curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/main/install.sh -o "$installer"; then
+        rm -f "$installer"
+        LOGE "下载安装脚本失败，请检查网络连接后重试"
+        return 1
+    fi
+    if [[ ! -s "$installer" ]]; then
+        rm -f "$installer"
+        LOGE "下载的安装脚本为空"
+        return 1
+    fi
+    bash "$installer"
+    local status=$?
+    rm -f "$installer"
+    return $status
+}
+
 install() {
-    bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/main/install.sh)
-    if [[ $? == 0 ]]; then
+    if run_installer; then
         if [[ $# == 0 ]]; then
             start
         else
@@ -132,11 +160,15 @@ update() {
         fi
         return 0
     fi
-    bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/main/install.sh)
-    if [[ $? == 0 ]]; then
+    if run_installer; then
         LOGI "更新完成，已自动重启面板 "
         exit 0
     fi
+    LOGE "更新失败，面板未做改动"
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+    return 1
 }
 
 uninstall() {
@@ -168,21 +200,43 @@ uninstall() {
     fi
 }
 
+gen_random_password() {
+    openssl rand -base64 48 2>/dev/null | tr -dc 'a-zA-Z0-9' | cut -c1-24
+}
+
 reset_user() {
-    confirm "确定要将用户名和密码重置为 admin 吗" "n"
+    confirm "确定要重置面板用户名和密码吗（将生成一个随机密码）" "n"
     if [[ $? != 0 ]]; then
         if [[ $# == 0 ]]; then
             show_menu
         fi
         return 0
     fi
-    /usr/local/x-ui/x-ui setting -username admin -password admin
-    echo -e "用户名和密码已重置为 ${green}admin${plain}，现在请重启面板"
+    local new_password
+    new_password="$(gen_random_password)"
+    if [[ ${#new_password} -lt 24 ]]; then
+        LOGE "生成随机密码失败，请确认已安装 openssl"
+        if [[ $# == 0 ]]; then
+            before_show_menu
+        fi
+        return 1
+    fi
+    # Never reset to a fixed credential: this menu item used to set admin/admin,
+    # which puts an internet-facing panel into a state scanners find within
+    # minutes and leaves a guessable value in the database afterwards.
+    #
+    # The credentials travel in the environment rather than argv, because
+    # /proc/<pid>/cmdline is world-readable and is captured by process auditing.
+    XUI_SETTING_USERNAME="admin" XUI_SETTING_PASSWORD="$new_password" \
+        /usr/local/x-ui/x-ui setting
+    echo -e "用户名已重置为：${green}admin${plain}"
+    echo -e "密码已重置为：${green}${new_password}${plain}"
+    echo -e "${yellow}此密码只显示一次，请妥善保存并在登录后立即修改。${plain}"
     confirm_restart
 }
 
 reset_config() {
-    confirm "确定要重置所有面板设置吗，账号数据不会丢失，用户名和密码不会改变" "n"
+    confirm "确定要重置面板设置吗，账号数据、用户名密码、访问端口、访问路径和证书均会保留" "n"
     if [[ $? != 0 ]]; then
         if [[ $# == 0 ]]; then
             show_menu
@@ -190,7 +244,7 @@ reset_config() {
         return 0
     fi
     /usr/local/x-ui/x-ui setting -reset
-    echo -e "所有面板设置已重置为默认值，现在请重启面板，并使用默认的 ${green}54321${plain} 端口访问面板"
+    echo -e "面板设置已重置。${green}访问端口、访问路径和 TLS 证书已保留${plain}，现在请重启面板"
     confirm_restart
 }
 
@@ -543,7 +597,15 @@ install_acme() {
         return 0
     fi
     LOGI "正在安装 acme.sh"
-    local installer="/tmp/acme-install-x-ui.$$"
+    # mktemp, not "/tmp/...$$": the PID space is small enough that an
+    # unprivileged local user can pre-create every candidate path in /tmp as a
+    # file they own (the sticky bit does not stop the owner from replacing it),
+    # then swap the file between curl writing it and root executing it.
+    local installer
+    installer="$(mktemp -t acme-install-x-ui.XXXXXXXXXX)" || {
+        LOGE "创建临时文件失败"
+        return 1
+    }
     if ! curl -fsSL https://get.acme.sh -o "$installer" || ! HOME=/root sh "$installer"; then
         rm -f "$installer"
         LOGE "安装 acme.sh 失败"

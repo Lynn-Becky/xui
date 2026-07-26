@@ -1,0 +1,32 @@
+# Keep secrets and local state out of the build context.
+#
+# bin/config.json is the *generated* Xray runtime config: it holds every
+# inbound's ids, passwords and private keys. It is gitignored, so it never shows
+# up in git status — but Docker's build context does not read .gitignore, and
+# `COPY . .` plus `COPY bin/. /root/bin/.` would bake a developer's live proxy
+# credentials into any image built from a working directory that has run the
+# panel.
+bin/config.json
+*.db
+*.db-shm
+*.db-wal
+cert/
+db/
+
+# Credentials helpers and history can live in .git; it is also just large.
+.git
+.github
+.gitignore
+
+# Build output and local scratch.
+dist/
+tmp/
+xui-release
+x-ui
+*.tar.gz
+*.zip
+
+# Not needed to build.
+media/
+README.md
+LICENSE

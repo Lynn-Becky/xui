@@ -126,10 +126,12 @@ config_after_install() {
             if ! is_valid_port "$config_port"; then
                 config_port="$(gen_random_port)"
             fi
-            "$XUI_FOLDER/x-ui" setting -username "$config_account" -password "$config_password" -port "$config_port"
+            XUI_SETTING_USERNAME="$config_account" XUI_SETTING_PASSWORD="$config_password" \
+            "$XUI_FOLDER/x-ui" setting -port "$config_port"
             install_panel_settings_changed=true
         elif [[ -n "${XUI_USERNAME:-}" && -n "${XUI_PASSWORD:-}" ]]; then
-            "$XUI_FOLDER/x-ui" setting -username "$XUI_USERNAME" -password "$XUI_PASSWORD"
+            XUI_SETTING_USERNAME="$XUI_USERNAME" XUI_SETTING_PASSWORD="$XUI_PASSWORD" \
+                "$XUI_FOLDER/x-ui" setting
         fi
         if [[ "$existing_database" == true ]] && is_valid_port "${XUI_PORT:-}"; then
             "$XUI_FOLDER/x-ui" setting -port "$XUI_PORT"
@@ -159,13 +161,15 @@ config_after_install() {
             fi
             error "端口必须在 1-65535 之间，请重新输入。"
         done
-        "$XUI_FOLDER/x-ui" setting -username "$config_account" -password "$config_password" -port "$config_port"
+        XUI_SETTING_USERNAME="$config_account" XUI_SETTING_PASSWORD="$config_password" \
+            "$XUI_FOLDER/x-ui" setting -port "$config_port"
         install_panel_settings_changed=true
     elif [[ "$existing_database" == false ]]; then
         config_account="$(gen_random_string 12)"
         config_password="$(gen_random_string 24)"
         config_port="$(gen_random_port)"
-        "$XUI_FOLDER/x-ui" setting -username "$config_account" -password "$config_password" -port "$config_port"
+        XUI_SETTING_USERNAME="$config_account" XUI_SETTING_PASSWORD="$config_password" \
+            "$XUI_FOLDER/x-ui" setting -port "$config_port"
         install_panel_settings_changed=true
         echo -e "${green}已使用安全随机的用户名、密码和端口。${plain}"
     else
@@ -209,7 +213,11 @@ print_panel_login_info() {
 
     settings="$("$XUI_FOLDER/x-ui" setting -show 2>/dev/null || true)"
     [[ -n "$username" ]] || username="$(printf '%s\n' "$settings" | awk -F ': ' '/^username: / { print substr($0, index($0, ": ") + 2); exit }')"
-    [[ -n "$password" ]] || password="$(printf '%s\n' "$settings" | awk -F ': ' '/^userpasswd: / { print substr($0, index($0, ": ") + 2); exit }')"
+    # No fallback that reads the stored password back: printing a freshly
+    # generated credential is fine, but re-reading and echoing the existing one
+    # meant every upgrade run dumped the live administrator password into stdout,
+    # and from there into tee'd logs, CI transcripts and terminal recordings.
+    # (The password is now stored as a hash, so it cannot be recovered anyway.)
     [[ -n "$port" ]] || port="$(printf '%s\n' "$settings" | awk -F ': ' '/^port: / { print substr($0, index($0, ": ") + 2); exit }')"
     base_path="$(printf '%s\n' "$settings" | awk -F ': ' '/^webBasePath: / { print substr($0, index($0, ": ") + 2); exit }')"
     [[ -n "$base_path" ]] || base_path="/"
@@ -224,7 +232,11 @@ print_panel_login_info() {
     echo ""
     echo -e "${green}面板登录信息（请妥善保存）：${plain}"
     echo "用户名：${username}"
-    echo "密码：${password}"
+    if [[ -n "$password" ]]; then
+        echo "密码：${password}"
+    else
+        echo "密码：未改动（如已遗忘，请执行 x-ui 并选择重置用户名和密码）"
+    fi
     echo "登录 URL：${protocol}://${server_ip}:${port}${base_path}"
 }
 
@@ -237,6 +249,14 @@ tag_version=""
 
 download_release() {
     local version="$1"
+    # The version is interpolated into the download URL. curl resolves dot
+    # segments per RFC 3986, so an unvalidated value like
+    # "../../attacker/xui/releases/download/1.0.0" silently redirects the
+    # download to another repository while the printed message still names x-ui.
+    if [[ -n "$version" && ! "$version" =~ ^[0-9A-Za-z._-]+$ ]]; then
+        error "非法的版本号：${version}"
+        exit 1
+    fi
     local asset_suffix=""
     [[ "$release" == alpine ]] && asset_suffix="-alpine"
     local archive="${XUI_FOLDER}-linux-${arch}${asset_suffix}.tar.gz"
@@ -263,10 +283,18 @@ download_release() {
 }
 
 install_openrc_service() {
-    local service_url="https://raw.githubusercontent.com/${XUI_REPO}/main/x-ui.rc"
+    # Prefer the copy shipped in the release package; fall back to the source
+    # tree next to this script, and only then to the network — pinned to the
+    # installed tag, never to the mutable main branch. Under the documented
+    # "bash <(curl ...)" invocation BASH_SOURCE is /dev/fd/63, so the script_dir
+    # check never matched and every Alpine install used to download its root init
+    # script from an unpinned branch.
+    local service_url="https://raw.githubusercontent.com/${XUI_REPO}/${tag_version}/x-ui.rc"
     local temp="/etc/init.d/x-ui.tmp.$$"
-    if [[ -n "$script_dir" && -f "$script_dir/x-ui.rc" ]]; then
-        install -m 0755 "${script_dir}/x-ui.rc" /etc/init.d/x-ui
+    if [[ -f "$XUI_FOLDER/x-ui.rc" ]]; then
+        install -m 0755 -o root -g root "$XUI_FOLDER/x-ui.rc" /etc/init.d/x-ui
+    elif [[ -n "$script_dir" && -f "$script_dir/x-ui.rc" ]]; then
+        install -m 0755 -o root -g root "${script_dir}/x-ui.rc" /etc/init.d/x-ui
     elif ! curl -fsSL -o "$temp" "$service_url" || [[ ! -s "$temp" ]]; then
         rm -f "$temp"
         error "下载 Alpine OpenRC 服务文件失败。"
@@ -315,21 +343,39 @@ install_x_ui() {
     archive="${XUI_FOLDER}-linux-${arch}${archive_suffix}.tar.gz"
 
     rm -rf "$XUI_FOLDER"
-    tar -xzf "$archive" -C "$(dirname "$XUI_FOLDER")" || { rm -f "$archive"; error "解压 x-ui 安装包失败。"; exit 1; }
+    # --no-same-owner / --no-same-permissions: as root, GNU tar restores the
+    # uid/gid and modes recorded in the archive. The release tarball is packed on
+    # a CI runner (uid 1001), so without these the panel binary that systemd runs
+    # as root ends up owned by uid 1001 on the target host — any local account
+    # with that uid could then replace it. The explicit chown makes ownership
+    # independent of the archive entirely.
+    tar --no-same-owner --no-same-permissions -xzf "$archive" -C "$(dirname "$XUI_FOLDER")" || { rm -f "$archive"; error "解压 x-ui 安装包失败。"; exit 1; }
     rm -f "$archive"
-    [[ -x "$XUI_FOLDER/x-ui" ]] || { error "安装包中缺少 x-ui 可执行文件。"; exit 1; }
-    chmod +x "$XUI_FOLDER/x-ui" "$XUI_FOLDER/x-ui.sh" "$XUI_FOLDER/bin/xray-linux-${arch}"
+    chown -R root:root "$XUI_FOLDER"
+    [[ -f "$XUI_FOLDER/x-ui" ]] || { error "安装包中缺少 x-ui 可执行文件。"; exit 1; }
+    chmod 0755 "$XUI_FOLDER/x-ui" "$XUI_FOLDER/x-ui.sh" "$XUI_FOLDER/bin/xray-linux-${arch}"
 
-    script_url="https://raw.githubusercontent.com/${XUI_REPO}/main/x-ui.sh"
-    script_temp="/usr/bin/x-ui.tmp.$$"
-    rm -f "$script_temp"
-    if ! curl -fsSL -o "$script_temp" "$script_url" || [[ ! -s "$script_temp" ]]; then
+    # Install the management script from the release package, not from the
+    # mutable main branch. Fetching it from main pairs a version-pinned binary
+    # with a HEAD-of-main root script, and a single force-push to main would gain
+    # root on every subsequent install and upgrade. The network fallback exists
+    # only for packages built before x-ui.sh was shipped, and is pinned to the
+    # installed tag rather than to a branch.
+    if [[ -f "$XUI_FOLDER/x-ui.sh" ]]; then
+        install -m 0755 -o root -g root "$XUI_FOLDER/x-ui.sh" /usr/bin/x-ui
+    else
+        script_url="https://raw.githubusercontent.com/${XUI_REPO}/${tag_version}/x-ui.sh"
+        script_temp="/usr/bin/x-ui.tmp.$$"
         rm -f "$script_temp"
-        error "下载 x-ui 管理脚本失败。"
-        exit 1
+        if ! curl -fsSL -o "$script_temp" "$script_url" || [[ ! -s "$script_temp" ]]; then
+            rm -f "$script_temp"
+            error "获取 x-ui 管理脚本失败。"
+            exit 1
+        fi
+        chown root:root "$script_temp"
+        chmod 0755 "$script_temp"
+        mv -f "$script_temp" /usr/bin/x-ui
     fi
-    mv -f "$script_temp" /usr/bin/x-ui
-    chmod +x /usr/bin/x-ui
 
     config_after_install
     if [[ "$release" == alpine ]]; then

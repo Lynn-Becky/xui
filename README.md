@@ -32,8 +32,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Lynn-Becky/xui/main/install.
 ```
 cd /root/
 rm x-ui/ /usr/local/x-ui/ /usr/bin/x-ui -rf
-tar zxvf x-ui-linux-amd64.tar.gz
-chmod +x x-ui/x-ui x-ui/bin/xray-linux-* x-ui/x-ui.sh
+tar --no-same-owner --no-same-permissions -zxvf x-ui-linux-amd64.tar.gz
+chown -R root:root x-ui
+chmod 0755 x-ui/x-ui x-ui/bin/xray-linux-* x-ui/x-ui.sh
 cp x-ui/x-ui.sh /usr/bin/x-ui
 cp -f x-ui/x-ui.service /etc/systemd/system/
 mv x-ui/ /usr/local/
@@ -41,6 +42,10 @@ systemctl daemon-reload
 systemctl enable x-ui
 systemctl restart x-ui
 ```
+
+> `--no-same-owner` 与 `chown` 是必要的：以 root 解包时 GNU tar 会沿用归档内记录的属主，而发布包是在 CI 上打的，否则 systemd 以 root 运行的面板二进制会归一个非 root 的 uid 所有。
+
+> **首次启动会自动生成随机的管理员密码**（不再是 `admin/admin`），密码只在服务日志中打印一次。用 `journalctl -u x-ui | grep -A3 "initial administrator"` 查看，登录后请立即修改。
 
 ## 使用docker安装
 
@@ -56,12 +61,17 @@ curl -fsSL https://get.docker.com | sh
 
 ```shell
 mkdir x-ui && cd x-ui
-docker run -itd --network=host \
+docker run -itd \
+    -p 127.0.0.1:54321:54321 \
     -v $PWD/db/:/etc/x-ui/ \
     -v $PWD/cert/:/root/cert/ \
     --name x-ui --restart=unless-stopped \
     enwaiax/x-ui:latest
 ```
+
+> **首次启动会自动生成随机的管理员密码**，只打印一次，用 `docker logs x-ui | grep -A3 "initial administrator"` 获取，登录后请立即修改。
+
+> 这里用 `-p 127.0.0.1:54321:54321` 而不是 `--network=host`：后者会把面板暴露在宿主机的所有网络接口上。如果入站节点需要监听宿主机端口（例如 443），再改用 `--network=host`，但请务必先确认面板端口未对公网开放。
 
 > Build 自己的镜像
 

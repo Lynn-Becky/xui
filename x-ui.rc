@@ -3,6 +3,9 @@
 command="/usr/local/x-ui/x-ui"
 command_background=true
 pidfile="/run/x-ui.pid"
+# Set the working directory through OpenRC rather than cd-ing in start_pre: the
+# cd applied to the start_pre subshell, not to the supervised process.
+directory="/usr/local/x-ui"
 description="x-ui Service"
 
 depend() {
@@ -10,5 +13,9 @@ depend() {
 }
 
 start_pre() {
-    cd /usr/local/x-ui
+    # The panel writes bin/config.json with every inbound's secrets (VMess and
+    # VLESS ids, Trojan and Shadowsocks passwords, REALITY private keys) and the
+    # SQLite database under /etc/x-ui. The default 0022 umask left both readable
+    # by every local account.
+    umask 0077
 }

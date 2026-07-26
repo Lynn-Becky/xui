@@ -32,7 +32,7 @@ func NewServerController(g *gin.RouterGroup) *ServerController {
 func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g = g.Group("/server")
 
-	g.Use(a.checkLogin)
+	g.Use(a.checkLogin, a.checkCSRF)
 	g.POST("/status", a.status)
 	g.POST("/getXrayVersion", a.getXrayVersion)
 	g.POST("/installXray/:version", a.installXray)
