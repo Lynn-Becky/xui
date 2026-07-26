@@ -61,17 +61,16 @@ curl -fsSL https://get.docker.com | sh
 
 ```shell
 mkdir x-ui && cd x-ui
-docker run -itd \
-    -p 127.0.0.1:54321:54321 \
+docker run -itd --network=host \
     -v $PWD/db/:/etc/x-ui/ \
     -v $PWD/cert/:/root/cert/ \
     --name x-ui --restart=unless-stopped \
     enwaiax/x-ui:latest
 ```
 
-> **首次启动会自动生成随机的管理员密码**，只打印一次，用 `docker logs x-ui | grep -A3 "initial administrator"` 获取，登录后请立即修改。
+> **首次启动会自动生成随机的管理员密码**（不再是 `admin/admin`），只打印一次，用 `docker logs x-ui | grep -A3 "initial administrator"` 获取，登录后请立即修改。
 
-> 这里用 `-p 127.0.0.1:54321:54321` 而不是 `--network=host`：后者会把面板暴露在宿主机的所有网络接口上。如果入站节点需要监听宿主机端口（例如 443），再改用 `--network=host`，但请务必先确认面板端口未对公网开放。
+> 这里保留 `--network=host` 是因为入站节点需要直接监听宿主机端口（例如 443），改用 `-p` 逐个发布端口会让代理不可用。代价是面板端口同样暴露在宿主机的所有网络接口上，因此建议：把面板端口设为一个随机高位端口、配置一个随机的面板访问路径，并用防火墙只放行你自己的来源 IP。
 
 > Build 自己的镜像
 

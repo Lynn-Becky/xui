@@ -19,13 +19,31 @@ UMask=0077
 # The process runs as root to bind privileged ports and manage the Xray child,
 # so constrain what that root can reach.
 NoNewPrivileges=yes
-ProtectSystem=full
-ProtectHome=yes
+
+# "yes", not "full": full would also make /etc read-only, which the panel needs
+# in order to create /etc/x-ui on a first run. Reopening it with
+# ReadWritePaths=/etc/x-ui is not a safe substitute, because systemd fails the
+# unit outright when a ReadWritePaths entry does not exist yet — and the manual
+# install steps in the README never invoke "x-ui setting", so the directory is
+# genuinely absent on first start.
+ProtectSystem=yes
+# /usr/local/x-ui is under the now read-only /usr, and the panel writes
+# bin/config.json plus the Xray binary and geo files there. This path always
+# exists: it is WorkingDirectory and holds ExecStart.
+ReadWritePaths=/usr/local/x-ui
+
+# read-only, not yes: the built-in acme.sh flow installs panel certificates to
+# /root/cert/<domain>/ (see ssl_cert_issue in x-ui.sh) and the panel loads them
+# at startup with tls.LoadX509KeyPair — a failure there aborts Start(), so the
+# panel would not come up at all. ProtectHome=yes hides /root entirely. The unit
+# never writes under /root (renewal runs from acme.sh's own cron, not from here),
+# so read-only keeps the hardening without breaking certificate loading.
+ProtectHome=read-only
+
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
-ReadWritePaths=/etc/x-ui /usr/local/x-ui
 
 [Install]
 WantedBy=multi-user.target
