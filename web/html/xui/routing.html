@@ -97,7 +97,9 @@
                 <a-textarea v-model="editingRule.user" :auto-size="{minRows: 1, maxRows: 4}" placeholder="逗号或换行分隔"></a-textarea>
             </a-form-model-item>
             <a-form-model-item label="入站标签">
-                <a-select v-model="editingRule.inboundTag" mode="tags" :token-separators="[',']"></a-select>
+                <a-select v-model="editingRule.inboundTag" mode="tags" :token-separators="[',']">
+                    <a-select-option v-for="tag in inboundOptions" :key="tag" :value="tag">[[ tag ]]</a-select-option>
+                </a-select>
             </a-form-model-item>
             <a-form-model-item label="出站标签">
                 <a-select v-model="editingRule.outboundTag" show-search allow-clear>
@@ -124,6 +126,7 @@
             savedTemplate: '',
             editor: null,
             rules: [],
+            panelInboundTags: [],
             templateError: '',
             ruleModal: {visible: false, index: -1},
             editingRule: null,
@@ -139,6 +142,16 @@
         },
         computed: {
             dirty() { return this.allSetting.xrayTemplateConfig !== this.savedTemplate; },
+            inboundOptions() {
+                // The panel's own inbounds first — those are what a rule
+                // normally targets — then the tags declared in the template
+                // (api), then anything already on the rule so a hand-typed or
+                // since-deleted tag still shows as selected.
+                const templateTags = this.editor ? this.editor.inboundTags() : [];
+                const selected = this.editingRule && Array.isArray(this.editingRule.inboundTag)
+                    ? this.editingRule.inboundTag : [];
+                return Array.from(new Set([...this.panelInboundTags, ...templateTags, ...selected])).filter(Boolean);
+            },
             outboundOptions() {
                 const tags = this.editor ? this.editor.outboundTags() : [];
                 if (this.editingRule && this.editingRule.outboundTag) tags.push(this.editingRule.outboundTag);
@@ -176,6 +189,14 @@
                 this.allSetting = new AllSetting(msg.obj);
                 this.savedTemplate = this.allSetting.xrayTemplateConfig;
                 this.loadEditor();
+            },
+            // The panel's inbounds live in the database, not in the Xray
+            // template, so their tags have to be fetched to be offered here.
+            async getPanelInboundTags() {
+                const msg = await HttpUtil.post('/xui/inbound/list');
+                if (!msg.success) return;
+                const tags = (msg.obj || []).map(inbound => inbound && inbound.tag).filter(Boolean);
+                this.panelInboundTags = Array.from(new Set(tags));
             },
             addRule() {
                 if (!this.editor) return;
@@ -226,7 +247,10 @@
                 if (msg.success) await this.getSettings();
             },
         },
-        async mounted() { await this.getSettings(); },
+        async mounted() {
+            await this.getSettings();
+            await this.getPanelInboundTags();
+        },
     });
 </script>
 </body>

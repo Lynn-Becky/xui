@@ -12,6 +12,10 @@ vm.runInContext(`${source}\nglobalThis.__routing = {RoutingRuleModel, RoutingRul
 
 const {RoutingRuleModel, RoutingRulesEditor} = context.__routing;
 const editor = new RoutingRulesEditor(JSON.stringify({
+    // Only the template's own inbound. The panel's inbounds live in the
+    // database and are appended to the running config by the server, so the
+    // routing page fetches those separately.
+    inbounds: [{tag: 'api'}],
     outbounds: [{tag: 'direct'}, {tag: 'blocked'}],
     routing: {
         balancers: [{tag: 'auto'}],
@@ -28,8 +32,14 @@ const editor = new RoutingRulesEditor(JSON.stringify({
     },
 }));
 
+assert.deepEqual(Array.from(editor.inboundTags()), ['api']);
 assert.deepEqual(Array.from(editor.outboundTags()), ['direct', 'blocked']);
 assert.deepEqual(Array.from(editor.balancerTags()), ['auto']);
+
+// A template with no inbounds section must not throw; the routing page still
+// has the panel's own inbound tags to offer.
+const emptyEditor = new RoutingRulesEditor(JSON.stringify({outbounds: [{tag: 'direct'}]}));
+assert.deepEqual(Array.from(emptyEditor.inboundTags()), []);
 
 const original = editor.rules[0];
 const form = RoutingRuleModel.toForm(original);

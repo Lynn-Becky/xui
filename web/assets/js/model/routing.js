@@ -83,6 +83,15 @@ class RoutingRulesEditor {
         return JSON.stringify(this.template, null, 2);
     }
 
+    // Tags of the inbounds declared in the template itself, such as "api".
+    //
+    // The panel's own inbounds are not here: XrayService.GetXrayConfig appends
+    // them from the database when it generates the running config, so the
+    // routing page has to fetch those separately.
+    inboundTags() {
+        return Array.from(new Set((this.template.inbounds || []).map(item => item && item.tag).filter(Boolean)));
+    }
+
     outboundTags() {
         return Array.from(new Set((this.template.outbounds || []).map(item => item && item.tag).filter(Boolean)));
     }
