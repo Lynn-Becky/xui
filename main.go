@@ -40,6 +40,12 @@ func runWebServer() {
 		log.Fatal(err)
 	}
 
+	// Only starting the panel seeds an account, so an install that provisions
+	// its own credentials never sees a throwaway one.
+	if err := database.EnsureInitialUser(); err != nil {
+		log.Fatal(err)
+	}
+
 	var server *web.Server
 
 	server = web.NewServer()
@@ -109,13 +115,17 @@ func showSetting(show bool) {
 			fmt.Println("get current web certificate paths failed:", certErr, keyErr)
 		}
 		userService := service.UserService{}
-		userModel, err := userService.GetFirstUser()
-		if err != nil {
-			fmt.Println("get current user info failed,error info:", err)
-		}
-		username := userModel.Username
-		if username == "" {
-			fmt.Println("current username is empty")
+		username := ""
+		// The account is created when the panel first starts, so it legitimately
+		// does not exist yet while the installer is still configuring things.
+		// Dereferencing the nil result here used to panic in that window.
+		if userModel, userErr := userService.GetFirstUser(); userErr != nil {
+			fmt.Println("no panel account exists yet (it is created on first start)")
+		} else {
+			username = userModel.Username
+			if username == "" {
+				fmt.Println("current username is empty")
+			}
 		}
 		fmt.Println("current pannel settings as follows:")
 		fmt.Println("username:", username)
@@ -231,42 +241,38 @@ func updateTgbotSetting(tgBotToken string, tgBotChatid int, tgBotRuntime string)
 	}
 }
 
+// updateSetting applies the requested changes. Failures are reported on stderr
+// so a caller that silences stdout to keep its own output tidy — install.sh does
+// this — still sees why something went wrong.
 func updateSetting(port int, username string, password string, webBasePath string) error {
-	err := database.InitDB(config.GetDBPath())
-	if err != nil {
-		fmt.Println(err)
+	if err := database.InitDB(config.GetDBPath()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
 
 	settingService := service.SettingService{}
 
 	if port > 0 {
-		err := settingService.SetPort(port)
-		if err != nil {
-			fmt.Println("set port failed:", err)
+		if err := settingService.SetPort(port); err != nil {
+			fmt.Fprintln(os.Stderr, "set port failed:", err)
 			return err
-		} else {
-			fmt.Printf("set port %v success", port)
 		}
+		fmt.Printf("set port %v success\n", port)
 	}
 	if username != "" || password != "" {
 		userService := service.UserService{}
-		err := userService.UpdateFirstUser(username, password)
-		if err != nil {
-			fmt.Println("set username and password failed:", err)
+		if err := userService.UpdateFirstUser(username, password); err != nil {
+			fmt.Fprintln(os.Stderr, "set username and password failed:", err)
 			return err
-		} else {
-			fmt.Println("set username and password success")
 		}
+		fmt.Println("set username and password success")
 	}
 	if webBasePath != "" {
-		err := settingService.SetBasePath(webBasePath)
-		if err != nil {
-			fmt.Println("set web base path failed:", err)
+		if err := settingService.SetBasePath(webBasePath); err != nil {
+			fmt.Fprintln(os.Stderr, "set web base path failed:", err)
 			return err
-		} else {
-			fmt.Println("set web base path success")
 		}
+		fmt.Println("set web base path success")
 	}
 	return nil
 }

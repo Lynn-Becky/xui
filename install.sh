@@ -108,13 +108,13 @@ config_after_install() {
     local config_input=""
     if [[ -z "$config_web_base_path" && ! -f "$XUI_DB_FILE" ]]; then
         config_web_base_path="$(gen_random_string 18)"
-        echo -e "${green}已生成随机面板访问路径：/${config_web_base_path}/${plain}"
     fi
     if [[ -n "$config_web_base_path" ]]; then
-        "$XUI_FOLDER/x-ui" setting -webBasePath "$config_web_base_path"
+        # Quiet: the path is reported once at the end, together with the rest of
+        # the login details.
+        "$XUI_FOLDER/x-ui" setting -webBasePath "$config_web_base_path" >/dev/null
         config_web_base_path="${config_web_base_path#/}"
         config_web_base_path="${config_web_base_path%/}"
-        echo -e "${green}面板访问路径：/${config_web_base_path}/${plain}"
     fi
     install_panel_base_path="/${config_web_base_path:+${config_web_base_path}/}"
 
@@ -127,14 +127,14 @@ config_after_install() {
                 config_port="$(gen_random_port)"
             fi
             XUI_SETTING_USERNAME="$config_account" XUI_SETTING_PASSWORD="$config_password" \
-            "$XUI_FOLDER/x-ui" setting -port "$config_port"
+                "$XUI_FOLDER/x-ui" setting -port "$config_port" >/dev/null
             install_panel_settings_changed=true
         elif [[ -n "${XUI_USERNAME:-}" && -n "${XUI_PASSWORD:-}" ]]; then
             XUI_SETTING_USERNAME="$XUI_USERNAME" XUI_SETTING_PASSWORD="$XUI_PASSWORD" \
-                "$XUI_FOLDER/x-ui" setting
+                "$XUI_FOLDER/x-ui" setting >/dev/null
         fi
         if [[ "$existing_database" == true ]] && is_valid_port "${XUI_PORT:-}"; then
-            "$XUI_FOLDER/x-ui" setting -port "$XUI_PORT"
+            "$XUI_FOLDER/x-ui" setting -port "$XUI_PORT" >/dev/null
         fi
         echo -e "${yellow}非交互安装已使用环境变量或安全随机值配置面板。${plain}"
         return
@@ -162,14 +162,14 @@ config_after_install() {
             error "端口必须在 1-65535 之间，请重新输入。"
         done
         XUI_SETTING_USERNAME="$config_account" XUI_SETTING_PASSWORD="$config_password" \
-            "$XUI_FOLDER/x-ui" setting -port "$config_port"
+            "$XUI_FOLDER/x-ui" setting -port "$config_port" >/dev/null
         install_panel_settings_changed=true
     elif [[ "$existing_database" == false ]]; then
         config_account="$(gen_random_string 12)"
         config_password="$(gen_random_string 24)"
         config_port="$(gen_random_port)"
         XUI_SETTING_USERNAME="$config_account" XUI_SETTING_PASSWORD="$config_password" \
-            "$XUI_FOLDER/x-ui" setting -port "$config_port"
+            "$XUI_FOLDER/x-ui" setting -port "$config_port" >/dev/null
         install_panel_settings_changed=true
         echo -e "${green}已使用安全随机的用户名、密码和端口。${plain}"
     else

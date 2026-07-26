@@ -21,26 +21,34 @@ import (
 var db *gorm.DB
 
 func initUser() error {
-	err := db.AutoMigrate(&model.User{})
-	if err != nil {
-		return err
+	return db.AutoMigrate(&model.User{})
+}
+
+// EnsureInitialUser creates an administrator account with a random password when
+// the database has none, and reports it once so the operator can retrieve it
+// from the service log (journalctl -u x-ui, or docker logs).
+//
+// This is deliberately not part of InitDB. Every CLI subcommand opens the
+// database, so seeding there meant the installer created a throwaway account and
+// printed its password moments before setting the real credentials — two
+// different passwords in one install, the first of them meaningless. Only
+// starting the panel calls this, which is exactly the case the seed exists for:
+// the Docker image and the manual install steps in the README never run the
+// installer's credential provisioning.
+func EnsureInitialUser() error {
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
 	}
 	var count int64
-	err = db.Model(&model.User{}).Count(&count).Error
-	if err != nil {
+	if err := db.Model(&model.User{}).Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {
 		return nil
 	}
 
-	// Never seed a fixed credential. A panel that boots with admin/admin on a
-	// well-known port is found by internet-wide scanners within minutes, and
-	// the Docker image and the manual install steps both reach this path
-	// without the installer's credential provisioning.
-	//
-	// The generated password is printed once so the operator can recover it
-	// from the service log (journalctl -u x-ui, or docker logs).
+	// Never seed a fixed credential: a panel that boots with admin/admin on a
+	// well-known port is found by internet-wide scanners within minutes.
 	password, err := random.SecureSeq(24)
 	if err != nil {
 		return err
@@ -49,11 +57,7 @@ func initUser() error {
 	if err != nil {
 		return err
 	}
-	user := &model.User{
-		Username: "admin",
-		Password: hash,
-	}
-	if err := db.Create(user).Error; err != nil {
+	if err := db.Create(&model.User{Username: "admin", Password: hash}).Error; err != nil {
 		return err
 	}
 
