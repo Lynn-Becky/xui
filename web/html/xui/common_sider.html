@@ -46,8 +46,8 @@
 
 {{define "commonSider"}}
 <a-layout-sider id="sider" collapsible breakpoint="md" collapsed-width="0">
-    <a-menu theme="dark" mode="inline" :selected-keys="['{{ .request_uri }}']"
-            @click="({key}) => key.startsWith('http') ? window.open(key) : location.href = key">
+    <a-menu theme="dark" mode="inline" :selected-keys="[location.pathname]"
+            @click="({key}) => menuNavigate(key)">
         {{template "menuItems" .}}
     </a-menu>
 </a-layout-sider>
@@ -57,12 +57,34 @@
     <div class="drawer-handle" @click="siderDrawer.change()" slot="handle">
         <a-icon :type="siderDrawer.visible ? 'close' : 'menu-fold'"></a-icon>
     </div>
-    <a-menu theme="light" mode="inline" :selected-keys="['{{ .request_uri }}']"
-        @click="({key}) => key.startsWith('http') ? window.open(key) : location.href = key">
+    <a-menu theme="light" mode="inline" :selected-keys="[location.pathname]"
+        @click="({key}) => menuNavigate(key)">
         {{template "menuItems" .}}
     </a-menu>
 </a-drawer>
 <script>
+
+    // Logout changes server state, so it is a POST. Exposing it as GET let any
+    // third-party page log the administrator out with a top-level navigation,
+    // which SameSite=Lax does not block.
+    async function menuNavigate(key) {
+        if (key.startsWith('http')) {
+            window.open(key);
+            return;
+        }
+        if (key.endsWith('/logout')) {
+            try {
+                await axios.post('logout');
+            } catch (e) {
+                // Land on the login page either way: on success the cookie is
+                // already cleared, and on failure that is where the user needs
+                // to end up anyway.
+            }
+            location.href = basePath;
+            return;
+        }
+        location.href = key;
+    }
 
     const siderDrawer = {
         visible: false,

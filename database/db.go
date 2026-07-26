@@ -3,17 +3,19 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 	"io"
-	"io/fs"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"x-ui/config"
 	"x-ui/database/model"
+	"x-ui/util/random"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var db *gorm.DB
@@ -28,13 +30,39 @@ func initUser() error {
 	if err != nil {
 		return err
 	}
-	if count == 0 {
-		user := &model.User{
-			Username: "admin",
-			Password: "admin",
-		}
-		return db.Create(user).Error
+	if count > 0 {
+		return nil
 	}
+
+	// Never seed a fixed credential. A panel that boots with admin/admin on a
+	// well-known port is found by internet-wide scanners within minutes, and
+	// the Docker image and the manual install steps both reach this path
+	// without the installer's credential provisioning.
+	//
+	// The generated password is printed once so the operator can recover it
+	// from the service log (journalctl -u x-ui, or docker logs).
+	password, err := random.SecureSeq(24)
+	if err != nil {
+		return err
+	}
+	hash, err := model.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	user := &model.User{
+		Username: "admin",
+		Password: hash,
+	}
+	if err := db.Create(user).Error; err != nil {
+		return err
+	}
+
+	log.Printf("=====================================================")
+	log.Printf(" x-ui: created the initial administrator account")
+	log.Printf("   username: admin")
+	log.Printf("   password: %s", password)
+	log.Printf(" This is shown only once. Change it after logging in.")
+	log.Printf("=====================================================")
 	return nil
 }
 
@@ -48,7 +76,9 @@ func initSetting() error {
 
 func InitDB(dbPath string) error {
 	dir := path.Dir(dbPath)
-	err := os.MkdirAll(dir, fs.ModeDir)
+	// 0700, not fs.ModeDir: fs.ModeDir is a type bit, so its permission bits
+	// are zero and the directory was previously created with mode 0000.
+	err := os.MkdirAll(dir, 0700)
 	if err != nil {
 		return err
 	}
@@ -66,6 +96,13 @@ func InitDB(dbPath string) error {
 	}
 	db, err = gorm.Open(sqlite.Open(dbPath), c)
 	if err != nil {
+		return err
+	}
+
+	// go-sqlite3 creates the database 0644. The file holds every inbound's
+	// secrets and the administrator credential hash, and on a Docker bind mount
+	// the host directory already exists so the 0700 above does not shield it.
+	if err := os.Chmod(dbPath, 0600); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 

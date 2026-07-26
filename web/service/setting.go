@@ -25,7 +25,8 @@ var defaultValueMap = map[string]string{
 	"webPort":            "54321",
 	"webCertFile":        "",
 	"webKeyFile":         "",
-	"secret":             random.Seq(32),
+	// Generated with crypto/rand on first use and persisted; see GetSecret.
+	"secret":             "",
 	"webBasePath":        "/",
 	"timeLocation":       "Asia/Shanghai",
 	"tgBotEnable":        "false",
@@ -115,9 +116,23 @@ func (s *SettingService) GetAllSetting() (*entity.AllSetting, error) {
 	return allSetting, nil
 }
 
+// preservedOnReset lists the settings that determine how the panel is reached.
+//
+// A reset that clears these silently returns the panel to plain HTTP on the
+// default port at "/", tearing down a configured TLS certificate and discarding
+// the random access path — while the confirmation prompt only promises that the
+// account is untouched. Anything that changes the panel's exposure stays.
+var preservedOnReset = []string{
+	"webPort",
+	"webBasePath",
+	"webCertFile",
+	"webKeyFile",
+	"secret",
+}
+
 func (s *SettingService) ResetSettings() error {
 	db := database.GetDB()
-	return db.Where("1 = 1").Delete(model.Setting{}).Error
+	return db.Where("key NOT IN ?", preservedOnReset).Delete(model.Setting{}).Error
 }
 
 func (s *SettingService) getSetting(key string) (*model.Setting, error) {
@@ -287,15 +302,28 @@ func (s *SettingService) SetKeyFile(value string) error {
 	return s.setString("webKeyFile", value)
 }
 
+// GetSecret returns the panel secret, generating and persisting one on first
+// use.
+//
+// This key authenticates and encrypts every session cookie, so it must come
+// from a cryptographically secure source. It previously came from
+// util/random.Seq, which is backed by math/rand.
 func (s *SettingService) GetSecret() ([]byte, error) {
 	secret, err := s.getString("secret")
-	if secret == defaultValueMap["secret"] {
-		err := s.saveSetting("secret", secret)
-		if err != nil {
-			logger.Warning("save secret failed:", err)
-		}
+	if err != nil {
+		return nil, err
 	}
-	return []byte(secret), err
+	if secret == "" {
+		secret, err = random.SecureSeq(64)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.saveSetting("secret", secret); err != nil {
+			return nil, err
+		}
+		logger.Info("generated a new panel session secret")
+	}
+	return []byte(secret), nil
 }
 
 func (s *SettingService) GetBasePath() (string, error) {

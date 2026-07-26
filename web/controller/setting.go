@@ -2,12 +2,14 @@ package controller
 
 import (
 	"errors"
-	"github.com/gin-gonic/gin"
 	"strings"
 	"time"
+	"x-ui/logger"
 	"x-ui/web/entity"
 	"x-ui/web/service"
 	"x-ui/web/session"
+
+	"github.com/gin-gonic/gin"
 )
 
 type updateUserForm struct {
@@ -130,8 +132,14 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		jsonMsg(c, "修改用户", err)
 		return
 	}
-	user := session.GetLoginUser(c)
-	if user.Username != form.OldUsername || user.Password != form.OldPassword {
+	user := currentUser(c)
+	if user == nil {
+		jsonMsg(c, "修改用户", errors.New("未登录"))
+		return
+	}
+	// Verify the old credentials against the stored hash rather than against
+	// anything carried in the session, which no longer holds the password.
+	if user.Username != form.OldUsername || a.userService.CheckUser(form.OldUsername, form.OldPassword) == nil {
 		jsonMsg(c, "修改用户", errors.New("原用户名或原密码错误"))
 		return
 	}
@@ -140,12 +148,20 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		return
 	}
 	err = a.userService.UpdateUser(user.Id, form.NewUsername, form.NewPassword)
-	if err == nil {
-		user.Username = form.NewUsername
-		user.Password = form.NewPassword
-		session.SetLoginUser(c, user)
+	if err != nil {
+		jsonMsg(c, "修改用户", err)
+		return
 	}
-	jsonMsg(c, "修改用户", err)
+	// Changing the credentials invalidates every session issued against the old
+	// ones, including this request's. Re-issue a session for the new
+	// fingerprint so the administrator who just changed it stays logged in.
+	updated, getErr := a.userService.GetUserById(user.Id)
+	if getErr != nil {
+		logger.Warning("reload user after credential change failed:", getErr)
+	} else if setErr := session.SetLoginSession(c, updated.Id, updated.CredentialFingerprint()); setErr != nil {
+		logger.Warning("refresh session after credential change failed:", setErr)
+	}
+	jsonMsg(c, "修改用户", nil)
 }
 
 func (a *SettingController) restartPanel(c *gin.Context) {

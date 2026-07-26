@@ -14,7 +14,6 @@ import (
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/net"
 	"io"
-	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -85,6 +84,9 @@ type ServerService struct {
 }
 
 const MaxDatabaseUploadSize int64 = 256 << 20
+
+// maxReleaseListSize bounds the GitHub releases response held in memory.
+const maxReleaseListSize int64 = 4 << 20
 
 var (
 	ErrInvalidGeofileName = errors.New("invalid geofile name")
@@ -318,10 +320,14 @@ func (s *ServerService) GetXrayVersions() ([]string, error) {
 	}
 
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list xray releases returned HTTP %s", resp.Status)
+	}
 	buffer := bytes.NewBuffer(make([]byte, 8192))
 	buffer.Reset()
-	_, err = buffer.ReadFrom(resp.Body)
-	if err != nil {
+	// Bounded: an unbounded ReadFrom will happily buffer whatever the remote
+	// sends into memory.
+	if _, err = buffer.ReadFrom(io.LimitReader(resp.Body, maxReleaseListSize)); err != nil {
 		return nil, err
 	}
 
@@ -367,7 +373,19 @@ func isSupportedXrayVersion(version string) bool {
 	return len(versionParts) == 1
 }
 
+// maxXrayArchiveSize bounds the release download so a redirect to an unexpected
+// endpoint cannot fill the disk.
+const maxXrayArchiveSize int64 = 128 << 20
+
 func (s *ServerService) downloadXRay(version string) (string, error) {
+	// The version reaches this from a URL path segment. Constrain it before it
+	// is interpolated into the download URL, and require it to be a release this
+	// panel actually supports so the endpoint cannot be used to roll Xray back
+	// to a build with known vulnerabilities.
+	if !isSupportedXrayVersion(version) {
+		return "", fmt.Errorf("unsupported xray version: %s", version)
+	}
+
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
@@ -390,6 +408,11 @@ func (s *ServerService) downloadXRay(version string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	// Without this an error page is happily written to disk as "the archive"
+	// and only fails later, with an unhelpful message, in zip.NewReader.
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download xray %s returned HTTP %s", version, resp.Status)
+	}
 
 	os.Remove(fileName)
 	file, err := os.Create(fileName)
@@ -398,9 +421,13 @@ func (s *ServerService) downloadXRay(version string) (string, error) {
 	}
 	defer file.Close()
 
-	_, err = io.Copy(file, resp.Body)
+	written, err := io.Copy(file, io.LimitReader(resp.Body, maxXrayArchiveSize+1))
 	if err != nil {
 		return "", err
+	}
+	if written > maxXrayArchiveSize {
+		os.Remove(fileName)
+		return "", fmt.Errorf("xray archive exceeds %d bytes", maxXrayArchiveSize)
 	}
 
 	return fileName, nil
@@ -438,30 +465,36 @@ func (s *ServerService) UpdateXray(version string) error {
 		}
 	}()
 
-	copyZipFile := func(zipName string, fileName string) error {
+	// Explicit modes rather than fs.ModePerm (0777): the extracted binary is run
+	// as root, so leaving it group- and world-writable would let any local
+	// account that happens to match replace it.
+	copyZipFile := func(zipName string, fileName string, mode os.FileMode) error {
 		zipFile, err := reader.Open(zipName)
 		if err != nil {
 			return err
 		}
 		os.Remove(fileName)
-		file, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.ModePerm)
+		file, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, mode)
 		if err != nil {
 			return err
 		}
 		defer file.Close()
-		_, err = io.Copy(file, zipFile)
-		return err
+		if _, err = io.Copy(file, zipFile); err != nil {
+			return err
+		}
+		// OpenFile applies the umask, so set the mode explicitly.
+		return os.Chmod(fileName, mode)
 	}
 
-	err = copyZipFile("xray", xray.GetBinaryPath())
+	err = copyZipFile("xray", xray.GetBinaryPath(), 0755)
 	if err != nil {
 		return err
 	}
-	err = copyZipFile("geosite.dat", xray.GetGeositePath())
+	err = copyZipFile("geosite.dat", xray.GetGeositePath(), 0644)
 	if err != nil {
 		return err
 	}
-	err = copyZipFile("geoip.dat", xray.GetGeoipPath())
+	err = copyZipFile("geoip.dat", xray.GetGeoipPath(), 0644)
 	if err != nil {
 		return err
 	}

@@ -1,13 +1,14 @@
 package controller
 
 import (
-	"github.com/gin-gonic/gin"
+	"errors"
 	"strconv"
 	"x-ui/database/model"
 	"x-ui/logger"
 	"x-ui/web/global"
 	"x-ui/web/service"
-	"x-ui/web/session"
+
+	"github.com/gin-gonic/gin"
 )
 
 type InboundController struct {
@@ -45,7 +46,11 @@ func (a *InboundController) startTask() {
 }
 
 func (a *InboundController) getInbounds(c *gin.Context) {
-	user := session.GetLoginUser(c)
+	user := currentUser(c)
+	if user == nil {
+		jsonMsg(c, "获取", errors.New("未登录"))
+		return
+	}
 	inbounds, err := a.inboundService.GetInbounds(user.Id)
 	if err != nil {
 		jsonMsg(c, "获取", err)
@@ -61,7 +66,11 @@ func (a *InboundController) addInbound(c *gin.Context) {
 		jsonMsg(c, "添加", err)
 		return
 	}
-	user := session.GetLoginUser(c)
+	user := currentUser(c)
+	if user == nil {
+		jsonMsg(c, "添加", errors.New("未登录"))
+		return
+	}
 	inbound.UserId = user.Id
 	inbound.Enable = true
 	err = a.inboundService.AddInbound(inbound)

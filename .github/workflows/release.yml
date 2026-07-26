@@ -11,6 +11,12 @@ permissions:
 env:
   GO_VERSION: 1.26.5
   XRAY_VERSION: v26.6.27
+  # Pinned, like XRAY_VERSION. Tracking "latest" meant every release silently
+  # baked in whatever a third-party maintainer had published most recently, with
+  # nothing recorded to audit against — and these files decide which traffic is
+  # proxied and which goes direct, so a bad one deanonymises users rather than
+  # merely breaking a build.
+  GEO_RULES_VERSION: "202607252248"
 
 jobs:
   release:
@@ -19,6 +25,12 @@ jobs:
       tag: ${{ steps.release_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Do not leave the workflow token in .git/config: every job here is
+          # granted contents:write, and any action in the job can otherwise read
+          # a credential that can overwrite published release assets. The steps
+          # that need it pass GH_TOKEN explicitly.
+          persist-credentials: false
       - name: Select release tag
         id: release_tag
         shell: pwsh
@@ -43,6 +55,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Do not leave the workflow token in .git/config: every job here is
+          # granted contents:write, and any action in the job can otherwise read
+          # a credential that can overwrite published release assets. The steps
+          # that need it pass GH_TOKEN explicitly.
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -54,20 +72,41 @@ jobs:
           cp xui-release x-ui/xui-release
           cp x-ui.service x-ui/x-ui.service
           cp x-ui.sh x-ui/x-ui.sh
+          # Ship the OpenRC script too. It was never packaged, so every Alpine
+          # install fell through to downloading its root init script from the
+          # mutable main branch.
+          cp x-ui.rc x-ui/x-ui.rc
           cd x-ui
           mv xui-release x-ui
           mkdir bin
           cd bin
-          wget https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip
-          unzip Xray-linux-64.zip
-          rm -f Xray-linux-64.zip geoip.dat geosite.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+          xray_archive=Xray-linux-64.zip
+          xray_base="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}"
+          wget -q "${xray_base}/${xray_archive}"
+          # Verify against the digest XTLS publishes for each asset; the binary
+          # ends up in every release tarball and is executed as root.
+          wget -q "${xray_base}/${xray_archive}.dgst"
+          expected="$(grep -iE '^(SHA2-256|SHA256)=' "${xray_archive}.dgst" | head -n1 | cut -d= -f2 | tr -d '[:space:]')"
+          test -n "${expected}" || { echo "no SHA-256 digest published for ${xray_archive}" >&2; exit 1; }
+          echo "${expected}  ${xray_archive}" | sha256sum -c -
+          unzip "${xray_archive}"
+          rm -f "${xray_archive}" "${xray_archive}.dgst" geoip.dat geosite.dat
+          for geo_file in geoip.dat geosite.dat; do
+            geo_base="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${GEO_RULES_VERSION}"
+            wget -q "${geo_base}/${geo_file}"
+            wget -q "${geo_base}/${geo_file}.sha256sum"
+            sha256sum -c "${geo_file}.sha256sum"
+            rm -f "${geo_file}.sha256sum"
+          done
           mv xray xray-linux-amd64
           cd ..
           cd ..
       - name: package
-        run: tar -zcvf x-ui-linux-amd64.tar.gz x-ui
+        # Record root ownership in the archive. GNU tar restores the archived
+        # uid/gid when extracting as root, so packing as the CI runner (uid 1001)
+        # made the installed, root-executed binary owned by uid 1001 on the
+        # target host. The installer also passes --no-same-owner.
+        run: tar --owner=0 --group=0 --numeric-owner -zcvf x-ui-linux-amd64.tar.gz x-ui
       - name: upload
         env:
           GH_TOKEN: ${{ github.token }}
@@ -79,6 +118,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Do not leave the workflow token in .git/config: every job here is
+          # granted contents:write, and any action in the job can otherwise read
+          # a credential that can overwrite published release assets. The steps
+          # that need it pass GH_TOKEN explicitly.
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -92,20 +137,35 @@ jobs:
           cp xui-release x-ui/xui-release
           cp x-ui.service x-ui/x-ui.service
           cp x-ui.sh x-ui/x-ui.sh
+          # Ship the OpenRC script too. It was never packaged, so every Alpine
+          # install fell through to downloading its root init script from the
+          # mutable main branch.
+          cp x-ui.rc x-ui/x-ui.rc
           cd x-ui
           mv xui-release x-ui
           mkdir bin
           cd bin
-          wget https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-arm64-v8a.zip
-          unzip Xray-linux-arm64-v8a.zip
-          rm -f Xray-linux-arm64-v8a.zip geoip.dat geosite.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+          xray_archive=Xray-linux-arm64-v8a.zip
+          xray_base="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}"
+          wget -q "${xray_base}/${xray_archive}"
+          wget -q "${xray_base}/${xray_archive}.dgst"
+          expected="$(grep -iE '^(SHA2-256|SHA256)=' "${xray_archive}.dgst" | head -n1 | cut -d= -f2 | tr -d '[:space:]')"
+          test -n "${expected}" || { echo "no SHA-256 digest published for ${xray_archive}" >&2; exit 1; }
+          echo "${expected}  ${xray_archive}" | sha256sum -c -
+          unzip "${xray_archive}"
+          rm -f "${xray_archive}" "${xray_archive}.dgst" geoip.dat geosite.dat
+          for geo_file in geoip.dat geosite.dat; do
+            geo_base="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${GEO_RULES_VERSION}"
+            wget -q "${geo_base}/${geo_file}"
+            wget -q "${geo_base}/${geo_file}.sha256sum"
+            sha256sum -c "${geo_file}.sha256sum"
+            rm -f "${geo_file}.sha256sum"
+          done
           mv xray xray-linux-arm64
           cd ..
           cd ..
       - name: package
-        run: tar -zcvf x-ui-linux-arm64.tar.gz x-ui
+        run: tar --owner=0 --group=0 --numeric-owner -zcvf x-ui-linux-arm64.tar.gz x-ui
       - name: upload
         env:
           GH_TOKEN: ${{ github.token }}
@@ -121,6 +181,12 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Do not leave the workflow token in .git/config: every job here is
+          # granted contents:write, and any action in the job can otherwise read
+          # a credential that can overwrite published release assets. The steps
+          # that need it pass GH_TOKEN explicitly.
+          persist-credentials: false
       - name: Set up QEMU
         if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
@@ -156,7 +222,7 @@ jobs:
           tar -xzf $baseArchive
           if ($LASTEXITCODE -ne 0) { throw "Failed to extract $baseArchive." }
           Copy-Item -LiteralPath 'xui-alpine' -Destination 'x-ui/x-ui' -Force
-          tar -czf $alpineArchive x-ui
+          tar --owner=0 --group=0 --numeric-owner -czf $alpineArchive x-ui
           if ($LASTEXITCODE -ne 0) { throw "Failed to create $alpineArchive." }
           gh release upload $env:RELEASE_TAG $alpineArchive --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload $alpineArchive." }
@@ -166,6 +232,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Do not leave the workflow token in .git/config: every job here is
+          # granted contents:write, and any action in the job can otherwise read
+          # a credential that can overwrite published release assets. The steps
+          # that need it pass GH_TOKEN explicitly.
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -179,20 +251,35 @@ jobs:
           cp xui-release x-ui/xui-release
           cp x-ui.service x-ui/x-ui.service
           cp x-ui.sh x-ui/x-ui.sh
+          # Ship the OpenRC script too. It was never packaged, so every Alpine
+          # install fell through to downloading its root init script from the
+          # mutable main branch.
+          cp x-ui.rc x-ui/x-ui.rc
           cd x-ui
           mv xui-release x-ui
           mkdir bin
           cd bin
-          wget https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-s390x.zip
-          unzip Xray-linux-s390x.zip
-          rm -f Xray-linux-s390x.zip geoip.dat geosite.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+          xray_archive=Xray-linux-s390x.zip
+          xray_base="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}"
+          wget -q "${xray_base}/${xray_archive}"
+          wget -q "${xray_base}/${xray_archive}.dgst"
+          expected="$(grep -iE '^(SHA2-256|SHA256)=' "${xray_archive}.dgst" | head -n1 | cut -d= -f2 | tr -d '[:space:]')"
+          test -n "${expected}" || { echo "no SHA-256 digest published for ${xray_archive}" >&2; exit 1; }
+          echo "${expected}  ${xray_archive}" | sha256sum -c -
+          unzip "${xray_archive}"
+          rm -f "${xray_archive}" "${xray_archive}.dgst" geoip.dat geosite.dat
+          for geo_file in geoip.dat geosite.dat; do
+            geo_base="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${GEO_RULES_VERSION}"
+            wget -q "${geo_base}/${geo_file}"
+            wget -q "${geo_base}/${geo_file}.sha256sum"
+            sha256sum -c "${geo_file}.sha256sum"
+            rm -f "${geo_file}.sha256sum"
+          done
           mv xray xray-linux-s390x
           cd ..
           cd ..
       - name: package
-        run: tar -zcvf x-ui-linux-s390x.tar.gz x-ui
+        run: tar --owner=0 --group=0 --numeric-owner -zcvf x-ui-linux-s390x.tar.gz x-ui
       - name: upload
         env:
           GH_TOKEN: ${{ github.token }}
